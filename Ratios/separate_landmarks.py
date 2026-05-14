@@ -69,7 +69,8 @@ right_jaw_bottom = landmarks[397]
 top_center_forehead = landmarks[10]
 glabella = np.array([
     (landmarks[8].x + landmarks[9].x) / 2,
-    (landmarks[8].y + landmarks[9].y) / 2
+    (landmarks[8].y + landmarks[9].y) / 2,
+    (landmarks[8].z + landmarks[9].z) / 2
 ])
 
 # Cheeks
