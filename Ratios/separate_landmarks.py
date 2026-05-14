@@ -56,5 +56,11 @@ left_jaw_angle1 = landmarks[132]
 left_jaw_angle2 = landmarks[58]
 right_jaw_angle1 = landmarks[361]
 right_jaw_angle2 = landmarks[288]
-top_center_forehead = landmarks[10]
 
+# Forehead
+top_center_forehead = landmarks[10]
+glabella = landmarks[9]
+
+# Cheeks
+left_cheek_apex = landmarks[50]
+right_cheek_apex = landmarks[280]
