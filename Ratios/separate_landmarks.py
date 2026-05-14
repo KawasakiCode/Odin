@@ -15,7 +15,13 @@ left_eye_inner_corner = landmarks[133]
 right_upper_eyelid_center = landmarks[386]
 right_lower_eyelid_center = landmarks[374]
 right_eye_outer_corner = landmarks[263]
-right_eye_inner_conter = landmarks[362]
+right_eye_inner_corner = landmarks[362]
+
+#Left Pupil
+left_pupil_center = landmarks[468]
+
+#Right Pupil 
+right_pupil_center = landmarks[473]
 
 # Left Eyebrow
 left_eyebrow_upper_outer_point = landmarks[70]
@@ -56,11 +62,18 @@ left_jaw_angle1 = landmarks[132]
 left_jaw_angle2 = landmarks[58]
 right_jaw_angle1 = landmarks[361]
 right_jaw_angle2 = landmarks[288]
+left_jaw_bottom = landmarks[172]
+right_jaw_bottom = landmarks[397]
 
 # Forehead
 top_center_forehead = landmarks[10]
-glabella = landmarks[9]
+glabella = np.array([
+    (landmarks[8].x + landmarks[9].x) / 2,
+    (landmarks[8].y + landmarks[9].y) / 2
+])
 
 # Cheeks
 left_cheek_apex = landmarks[50]
+left_cheek_hollow = landmarks[205]
 right_cheek_apex = landmarks[280]
+right_cheek_hollow = landmarks[425]

@@ -4,14 +4,13 @@ import numpy as np
 
 def calculate_landmarks_array(image_path):
     # Initialize MediaPipe Face Mesh
-    # With refine_landmarks=False landmarks 
-    # will be 468 instead of 478
-    # The extra 10 are used to track the iris of the eyes which are irrelevant
+    # With refine_landmarks=True landmarks 
+    # will be 478
     mp_face_mesh = mp.solutions.face_mesh
     face_mesh = mp_face_mesh.FaceMesh(  
         static_image_mode=True,
         max_num_faces=1,
-        refine_landmarks=False,
+        refine_landmarks=True,
         min_detection_confidence=0.5
     )
 
