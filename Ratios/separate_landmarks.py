@@ -40,3 +40,12 @@ nose_tip = landmarks[4]
 left_alare_tip = landmarks[129]
 right_alare_tip = landmarks[358]
 
+# Lips
+lip_left_outer = landmarks[61]
+lip_right_outer = landmarks[291]
+upper_lip_top_center = landmarks[0]
+upper_lip_bottom_center = landmarks[13]
+lower_lip_top_center = landmarks[14]
+lower_lip_bottom_center = landmarks[17]
+
+
