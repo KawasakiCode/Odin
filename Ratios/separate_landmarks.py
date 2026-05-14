@@ -48,4 +48,13 @@ upper_lip_bottom_center = landmarks[13]
 lower_lip_top_center = landmarks[14]
 lower_lip_bottom_center = landmarks[17]
 
+# Jawline and Oval
+chin = landmarks[152]
+left_zygomatic = landmarks[234]
+right_zygomatic = landmarks[454]
+left_jaw_angle1 = landmarks[132]
+left_jaw_angle2 = landmarks[58]
+right_jaw_angle1 = landmarks[361]
+right_jaw_angle2 = landmarks[288]
+top_center_forehead = landmarks[10]
 
