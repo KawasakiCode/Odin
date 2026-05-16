@@ -1,5 +1,5 @@
 import numpy as np
-from constants import SYMMETRIC_PAIR_KEYS
+from Odin.Face_analysis.constants import SYMMETRIC_PAIR_KEYS
 
 def calculate_euclidian_distance(point_a, point_b):
     return np.linalg.norm(point_a - point_b)
@@ -44,5 +44,72 @@ def symmetry_score(face_data):
 
     # Score: 0 = perfect symmetry (lower is better)
     return euclidean_norm
+
+# Optimal Length Ratio
+def  width_ratio_46(face_data):
+    """
+    The 46% ratio calculates the distance from the 
+    center of the left pupil to the center of the 
+    right pupil. That distance should be 46% of 
+    the bizygomatic width.
+
+    Ideal ratio -> 0.46
+    < 0.40 -> close-set eye (or very wide cheekbones)
+    > 0.50 -> wide-set eyes
+    """
+    left_pupil_x = face_data["left_pupil_center"][0]
+    left_pupil_y = face_data["left_pupil_center"][1]
+
+    right_pupil_x = face_data["right_pupil_center"][0]
+    right_pupil_y = face_data["right_pupil_center"][1]
+
+    # Interpupillary Distance
+    IPD = np.linalg.norm(
+        np.array([left_pupil_x, left_pupil_y]) -
+        np.array([right_pupil_x, right_pupil_y])
+    )
+
+    # Bizygomatic Width
+    biz_width = np.linalg.norm(  
+        face_data["left_zygomatic"] - 
+        face_data["right_zygomatic"]
+    )
+
+    return IPD / biz_width
+
+def height_ratio_36(face_data):
+    """
+    The 36% ratio calculates the vertical distance from the 
+    horizontal line of the pupils down to the 
+    horizontal line of the mouth (where the lips meet).
+    The distance should be 36% of the total height of the face
+    (Trichion to Menton)
+
+    Ideal ratio -> 0.36
+    < 0.33 -> compressed midface (features sit too high)
+    > 0.40 -> elongated midface (featues sit too low)
+    """
+    pupils_y = (
+        face_data["left_pupil_center"][1] + 
+        face_data["right_pupil_center"][1]
+    ) / 2
+
+    # Stomion: midpoint between upper and lower lip meeting point
+    stomion_y = (
+        face_data["upper_lip_bottom_center"][1] + 
+        face_data["lower_lip_top_center"][1]
+    ) / 2
+
+    # Trichion: The center of the hairline
+    trichion_y = face_data["top_center_forehead"][1]
+    # Menton: Bottom of chin
+    menton_y = face_data["chin"][1]
+
+    eye_to_mouth = abs(pupils_y - stomion_y)
+    face_height = abs(trichion_y - menton_y)
+
+    return eye_to_mouth / face_height
+
+
 
 
