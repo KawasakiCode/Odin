@@ -1,3 +1,6 @@
+# The path of the image to get rated
+IMAGEPATH = "image.jpg"
+
 # A list of pairs of all the mediapipe landmarks that are used
 # For example left eye outer corner is landmark[33] and right eye is landmark[263]
 # Compare x coordinates of all these pairs to get a symmetry score 
