@@ -1,8 +1,6 @@
 import numpy as np
+import math
 from Odin.Face_analysis.constants import SYMMETRIC_PAIR_KEYS
-
-def calculate_euclidian_distance(point_a, point_b):
-    return np.linalg.norm(point_a - point_b)
 
 # Bilateral Symmetry
 def symmetry_score(face_data):
@@ -45,7 +43,7 @@ def symmetry_score(face_data):
     # Score: 0 = perfect symmetry (lower is better)
     return euclidean_norm
 
-# Optimal Length Ratio
+# Optimal Length/Width Midface Ratios
 def  width_ratio_46(face_data):
     """
     The 46% ratio calculates the distance from the 
@@ -110,6 +108,32 @@ def height_ratio_36(face_data):
 
     return eye_to_mouth / face_height
 
+# Canthal Tilt
+def canthal_tilt(inner_canthus, outer_canthus):
+    dx = outer_canthus[0] - inner_canthus[0]
+    dy = outer_canthus[1] - inner_canthus[1]
+    return math.degrees(math.atan2(-dy, dx))
 
+def canthal_tilt_final(face_data):
+    """
+    Canthal tilt is the angle formed by the line from the
+    inner corner of the eye to the outer corner.
+    Positive = outer corner higher than inner.
+    Negative = outer corner lower than inner.
 
+    Ideal: Male: +3° to +5° / Female: +5° to 8°
+    Neutral: 0° to +3°
+    Negative: <0°  
+    """
 
+    left_tilt = canthal_tilt(
+        face_data["left_eye_inner_corner"], 
+        face_data["left_eye_outer_corner"])
+    
+    right_tilt = canthal_tilt(
+        face_data["right_eye_inner_corner"], 
+        face_data["right_eye_outer_corner"])
+    
+    avg_tilt = (left_tilt + right_tilt) / 2
+
+    return avg_tilt
