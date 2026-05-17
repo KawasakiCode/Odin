@@ -34,7 +34,12 @@ def extract_face_data(landmarks):
             "right_eyebrow_peak_from_eye": landmarks[282],
             "right_eyebrow_peak_from_forehead": landmarks[334],
 
-            "eyebrows_bottom": landmarks[8],
+            "eyebrows_bottom": (
+                landmarks[55] + 
+                landmarks[285] + 
+                landmarks[46] + 
+                landmarks[276]
+            ) / 4,
 
             # Nose
             "base_of_nose": landmarks[2],

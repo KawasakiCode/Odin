@@ -143,6 +143,9 @@ def fwhr(face_data):
     Facial Width-to-Height Ratio. Divides bizygomatic width
     by upper face height (nasion to stomion).
 
+    The stomion is approximated as the midpoint between
+    upper_lip_bottom_center and lower_lip_top_center.
+
     Ideal: Male 1.9-2.05  /  Female 1.75-1.9
     < 1.7  -> too narrow
     > 2.2  -> disproportionately wide
@@ -150,9 +153,10 @@ def fwhr(face_data):
     biz_width = np.linalg.norm(
         face_data["left_zygomatic"] - face_data["right_zygomatic"]
     )
-    upper_face_height = np.linalg.norm(
-        face_data["eyebrows_bottom"] - face_data["upper_lip_top_center"]
-    )
+    bottom_eyebrows = face_data["eyebrows_bottom"]
+    upper_lip_top = face_data["upper_lip_top_center"]
+
+    upper_face_height = np.linalg.norm(bottom_eyebrows - upper_lip_top)
 
     return biz_width / upper_face_height
 
