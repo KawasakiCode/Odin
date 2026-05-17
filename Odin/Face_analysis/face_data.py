@@ -34,6 +34,8 @@ def extract_face_data(landmarks):
             "right_eyebrow_peak_from_eye": landmarks[282],
             "right_eyebrow_peak_from_forehead": landmarks[334],
 
+            "eyebrows_bottom": landmarks[8],
+
             # Nose
             "base_of_nose": landmarks[2],
             "top_of_nose_bridge": landmarks[168],

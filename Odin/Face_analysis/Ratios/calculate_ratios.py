@@ -137,3 +137,22 @@ def canthal_tilt_final(face_data):
     avg_tilt = (left_tilt + right_tilt) / 2
 
     return avg_tilt
+
+def fwhr(face_data):
+    """
+    Facial Width-to-Height Ratio. Divides bizygomatic width
+    by upper face height (nasion to stomion).
+
+    Ideal: Male 1.9-2.05  /  Female 1.75-1.9
+    < 1.7  -> too narrow
+    > 2.2  -> disproportionately wide
+    """
+    biz_width = np.linalg.norm(
+        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+    )
+    upper_face_height = np.linalg.norm(
+        face_data["eyebrows_bottom"] - face_data["upper_lip_top_center"]
+    )
+
+    return biz_width / upper_face_height
+
