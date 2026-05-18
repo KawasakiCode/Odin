@@ -1,6 +1,7 @@
 import numpy as np
 import math
 from Odin.Face_analysis.constants import SYMMETRIC_PAIR_KEYS
+from Face_analysis.utils import angle_at_vertex, line_angle_degrees
 
 # Bilateral Symmetry
 def symmetry_score(face_data):
@@ -138,6 +139,7 @@ def canthal_tilt_final(face_data):
 
     return avg_tilt
 
+# Facial width to height ratio
 def fwhr(face_data):
     """
     Facial Width-to-Height Ratio. Divides bizygomatic width
@@ -159,4 +161,53 @@ def fwhr(face_data):
     upper_face_height = np.linalg.norm(bottom_eyebrows - upper_lip_top)
 
     return biz_width / upper_face_height
+
+# Frontal jaw contour angle
+def frontal_jaw_contour_angle(face_data):
+    """
+    The frontal jaw contour angle measures the slope of the jawline
+    in a frontal photo, compared against a reference line from the
+    lateral canthus to the ipsilateral alare (nostril tip).
+    
+    Unlike the gonial angle (measured from a profile photo), this
+    angle is wider and measures how parallel the jawline runs
+    relative to the canthus-alare reference line.
+
+    A deviation of 0° means the jawline is perfectly parallel to
+    the canthus-alare line. The jawline should slope downward
+    slightly from the jaw angle toward the chin.
+
+    Ideal: 0°-15° downward deviation from the canthus-alare line
+    Female frontal jaw angle: ~139°-142° (wider, more tapered)
+    Male frontal jaw angle:   ~125°-130° (squarer, more defined)
+    > 15° deviation -> jawline drops too steeply (weak jaw)
+    = 0°            -> perfectly parallel (very defined jaw)
+    """
+
+    left_ref_angle = line_angle_degrees(  
+        face_data["left_eye_outer_corner"],
+        face_data["left_alare_tip"]
+    )
+    left_jaw_angle = line_angle_degrees(  
+        face_data["left_jaw_angle1"],
+        face_data["chin"]
+    )
+    left_deviation = abs(left_ref_angle - left_jaw_angle)
+
+
+    right_ref_angle = line_angle_degrees(  
+        face_data["right_eye_outer_corner"],
+        face_data["right_alare_tip"]
+    )
+    right_jaw_angle = line_angle_degrees(  
+        face_data["right_jaw_angle1"],
+        face_data["chin"]
+    )
+    right_deviation = abs(right_ref_angle - right_jaw_angle)
+
+    return {
+        "deviation": (left_deviation + right_deviation) / 2,
+        "jaw_slope": (left_jaw_angle + right_jaw_angle) / 2,
+        "canthus_alare_slope": (left_ref_angle + right_ref_angle) / 2
+    }
 
