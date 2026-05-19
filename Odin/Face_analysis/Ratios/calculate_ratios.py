@@ -246,3 +246,26 @@ def horizontal_thirds(face_data):
         "middle_perc": middle_percentage,
         "lower_perc": lower_percentage
     }
+
+# Bizygomatic / Bigonial Ratio
+def bizygomatic_bigonial_ratio(face_data):
+    """
+    Divides bizygomatic width (cheekbone to cheekbone) by
+    bigonial width (jaw angle to jaw angle). Measures how
+    much the cheekbones flare relative to the jaw — the
+    degree of facial taper from midface to lower face.
+
+    Ideal: Female 1.174 (more tapered, V-shaped)
+           Male   1.128 (squarer, less taper)
+    < 1.0  -> jaw wider than cheekbones (very masculine/unusual)
+    > 1.3  -> extremely tapered (very feminine/heart-shaped)
+    """    
+    biz_width = np.linalg.norm(  
+        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+    )
+
+    big_width = np.linalg.norm(
+        face_data["left_jaw_angle1"] - face_data["right_jaw_angle1"]
+    )
+
+    return biz_width / big_width
