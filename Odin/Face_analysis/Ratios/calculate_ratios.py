@@ -269,3 +269,44 @@ def bizygomatic_bigonial_ratio(face_data):
     )
 
     return biz_width / big_width
+
+# Facial Fifths
+def facial_fifths(face_data):
+    """
+    Divides the total face width into fifths, each ideally
+    equal to one eye width. Assesses horizontal facial harmony.
+
+    Measures:
+    - face_width / avg_eye_width        -> ideal 5.0
+    - intercanthal_dist / avg_eye_width -> ideal 1.0
+      (gap between eyes should equal one eye width)
+
+    > 5.5 face ratio  -> face too wide for eye spacing
+    < 4.5 face ratio  -> face too narrow for eye spacing
+    > 1.2 inter-eye   -> eyes too far apart
+    < 0.8 inter-eye   -> eyes too close together
+    """
+
+    left_eye_width = np.linalg.norm(
+        face_data["left_eye_outer_corner"] - face_data["left_eye_inner_corner"]
+    )    
+
+    right_eye_width = np.linalg.norm(
+        face_data["right_eye_outer_corner"] - face_data["right_eye_inner_corner"]
+    )   
+
+    avg_eye_width = (left_eye_width + right_eye_width) / 2
+
+    face_width = np.linalg.norm(  
+        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+    )
+
+    intercanthal = np.linalg.norm(
+        face_data["left_eye_inner_corner"] - face_data["right_eye_inner_corner"]
+    )
+
+    return {
+        "fifths_ratio": face_width / avg_eye_width,
+        "inter_eye_ratio": intercanthal / avg_eye_width
+    }
+
