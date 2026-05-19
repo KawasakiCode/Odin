@@ -163,6 +163,7 @@ def fwhr(face_data):
     return biz_width / upper_face_height
 
 # Frontal jaw contour angle
+# TODO probably add this ratio to the side profile picture as gonial angle
 def frontal_jaw_contour_angle(face_data):
     """
     The frontal jaw contour angle measures the slope of the jawline
@@ -211,3 +212,37 @@ def frontal_jaw_contour_angle(face_data):
         "canthus_alare_slope": (left_ref_angle + right_ref_angle) / 2
     }
 
+# Facial Thirds
+def horizontal_thirds(face_data):
+    """
+    Divides the face into three vertical regions and measures
+    each as a percentage of total face height.
+
+    Upper third:  trichion (hairline) -> glabella (between brows)
+    Middle third: glabella -> subnasale (base of nose)
+    Lower third:  subnasale -> menton (chin)
+
+    Classical ideal: 1:1:1 (33.3% each)
+
+    Modern gender-adjusted ideals:
+    Male:   upper 31.0% / middle 30.5% / lower 38.5%
+    Female: upper 29.5% / middle 32.4% / lower 38.2%
+
+    Both sexes show a dominant lower third — the classical
+    1:1:1 canon is outdated for attractiveness assessment.
+    """   
+    upper = abs(face_data["top_center_forehead"][1] - face_data["glabella"][1])
+    middle = abs(face_data["glabella"][1] - face_data["base_of_nose"][1])
+    lower = abs(face_data["base_of_nose"][1] - face_data["chin"][1])
+
+    total = upper + middle + lower
+
+    upper_percentage = upper / total
+    middle_percentage = middle / total
+    lower_percentage = lower / total
+
+    return {
+        "upper_perc": upper_percentage,
+        "middle_perc": middle_percentage,
+        "lower_perc": lower_percentage
+    }
