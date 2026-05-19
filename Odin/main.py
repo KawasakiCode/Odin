@@ -1,6 +1,6 @@
 from Odin.Face_analysis.landmarks import calculate_landmarks_array
 from Odin.Face_analysis.face_data import extract_face_data
-from Odin.Face_analysis.Ratios.calculate_ratios import bizygomatic_bigonial_ratio, canthal_tilt, facial_fifths, frontal_jaw_contour_angle, fwhr, height_ratio_36, horizontal_thirds, symmetry_score, width_ratio_46
+from Odin.Face_analysis.Ratios.calculate_ratios import bizygomatic_bigonial_ratio, canthal_tilt, facial_fifths, frontal_jaw_contour_angle, fwhr, height_ratio_36, horizontal_thirds, orbitonasal_ratio, symmetry_score, width_ratio_46
 from Odin.Face_analysis.constants import IMAGEPATH
 
 landmarks = calculate_landmarks_array(IMAGEPATH)
@@ -16,5 +16,6 @@ results = {
     "horizontal_thirds": horizontal_thirds(face_data),
     "bizygomatic_bigonial_ratio": bizygomatic_bigonial_ratio(face_data),
     "facial_fifths": facial_fifths(face_data),
+    "orbitonasal_ratio": orbitonasal_ratio(face_data),
 
 }

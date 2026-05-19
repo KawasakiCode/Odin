@@ -310,3 +310,25 @@ def facial_fifths(face_data):
         "inter_eye_ratio": intercanthal / avg_eye_width
     }
 
+# Orbitonasal / Nose-Intercanthal
+def orbitonasal_ratio(face_data):
+    """
+    Compares nose width (ala to ala) against the intercanthal
+    distance (inner corner to inner corner of the eyes).
+    One of the original Neoclassical Canons.
+
+    Ideal: 1.0 (nose width equals intercanthal distance)
+    Female exception: attractive female faces often score
+    slightly below 1.0, signaling a smaller, more delicate nose.
+
+    > 1.2 -> nose too wide relative to eye spacing
+    < 0.8 -> nose too narrow (or eyes too close together)
+    """  
+    nose_width = np.linalg.norm(  
+        face_data["left_alare_tip"] - face_data["right_alare_tip"]
+    )
+    intercanthal = np.linalg.norm(
+        face_data["left_eye_inner_corner"] - face_data["right_eye_inner_corner"]
+    )
+
+    return nose_width / intercanthal 
