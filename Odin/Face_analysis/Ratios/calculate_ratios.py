@@ -277,14 +277,14 @@ def facial_fifths(face_data):
     equal to one eye width. Assesses horizontal facial harmony.
 
     Measures:
-    - face_width / avg_eye_width        -> ideal 5.0
-    - intercanthal_dist / avg_eye_width -> ideal 1.0
+    - face_width / avg_eye_width        -> ideal 4.0 - 4.25
+    - intercanthal_dist / avg_eye_width -> ideal 0.95 - 1.15
       (gap between eyes should equal one eye width)
 
-    > 5.5 face ratio  -> face too wide for eye spacing
-    < 4.5 face ratio  -> face too narrow for eye spacing
-    > 1.2 inter-eye   -> eyes too far apart
-    < 0.8 inter-eye   -> eyes too close together
+    > 4.5 face ratio  -> face too wide for eye spacing
+    < 3.8 face ratio  -> face too narrow for eye spacing
+    > 1.15 inter-eye   -> eyes too far apart
+    < 0.95 inter-eye   -> eyes too close together
     """
 
     left_eye_width = np.linalg.norm(
@@ -332,3 +332,22 @@ def orbitonasal_ratio(face_data):
     )
 
     return nose_width / intercanthal 
+
+# Nasofacial Proportion
+def nasofacial_proportion(face_data):
+    """
+    Compares nose width against total bizygomatic face width.
+    The nose should occupy exactly one quarter of the face width.
+
+    Ideal: 0.25 (nose width = 25% of face width)
+    > 0.30 -> nose too wide for the face
+    < 0.20 -> nose too narrow for the face
+    """    
+    nose_width = np.linalg.norm(
+        face_data["left_alare_tip"] - face_data["right_alare_tip"]
+    )
+    face_width = np.linalg.norm(  
+        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+    )
+
+    return nose_width / face_width
