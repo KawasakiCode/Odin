@@ -393,3 +393,22 @@ def face_golden_ratio(face_data):
 
     return face_height / face_width
 
+# Face Height/Bigonial Width
+def face_height_bigonial_width(face_data):
+    """
+    Divides total face height (trichion to menton) by
+    bigonial width (jaw angle to jaw angle).
+
+    Ideal: Female 1.613 (±0.063) — virtually exact Golden Ratio
+           Male   1.566 (±0.085) — slightly wider jaw
+    < 1.4  -> jaw too wide for face height (very square)
+    > 1.7  -> jaw too narrow for face height (very tapered)
+    """    
+    face_height = np.linalg.norm(
+        face_data["top_center_forehead"] - face_data["chin"]
+    )
+    big_width   = np.linalg.norm(
+        face_data["left_jaw_angle1"] - face_data["right_jaw_angle1"]
+    )
+
+    return face_height / big_width
