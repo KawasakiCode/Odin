@@ -1,6 +1,6 @@
 from Odin.Face_analysis.landmarks import calculate_landmarks_array
 from Odin.Face_analysis.face_data import extract_face_data
-from Odin.Face_analysis.Ratios.calculate_ratios import bizygomatic_bigonial_ratio, canthal_tilt, facial_fifths, frontal_jaw_contour_angle, fwhr, height_ratio_36, horizontal_thirds, nasofacial_proportion, orbitonasal_ratio, symmetry_score, width_ratio_46
+from Odin.Face_analysis.Ratios.calculate_ratios import bizygomatic_bigonial_ratio, canthal_tilt, face_golden_ratio, facial_fifths, frontal_jaw_contour_angle, fwhr, height_ratio_36, horizontal_thirds, naso_oral_ratio, nasofacial_proportion, orbitonasal_ratio, symmetry_score, width_ratio_46
 from Odin.Face_analysis.constants import IMAGEPATH
 
 landmarks = calculate_landmarks_array(IMAGEPATH)
@@ -18,5 +18,7 @@ results = {
     "facial_fifths": facial_fifths(face_data),
     "orbitonasal_ratio": orbitonasal_ratio(face_data),
     "nasofacial_proportion": nasofacial_proportion(face_data),
+    "naso_oral_ratio": naso_oral_ratio(face_data),
+    "face_golden_ratio": face_golden_ratio(face_data),
 
 }

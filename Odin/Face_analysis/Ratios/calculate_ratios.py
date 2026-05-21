@@ -371,3 +371,25 @@ def naso_oral_ratio(face_data):
     )
 
     return mouth_width / nose_width
+
+# Face Golden Ratio
+def face_golden_ratio(face_data):
+    """
+    Divides total face height (trichion to menton) by
+    bizygomatic width. Evaluates the overall face bounding
+    box proportions against the Golden Ratio.
+
+    Ideal: Female: 1.30 / Male: 1.35
+
+    < 1.3  -> face too wide (very broad/flat appearance)
+    > 1.4  -> face too elongated (very narrow appearance)
+    """    
+    face_height = np.linalg.norm(
+        face_data["top_center_forehead"] - face_data["chin"]
+    )
+    face_width  = np.linalg.norm(
+        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+    )
+
+    return face_height / face_width
+
