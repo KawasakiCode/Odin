@@ -351,3 +351,23 @@ def nasofacial_proportion(face_data):
     )
 
     return nose_width / face_width
+
+# Naso-Oral / Mouth-Nose Ratio
+def naso_oral_ratio(face_data):
+    """
+    Compares mouth width (cheilion to cheilion) against
+    nose width (ala to ala). One of the Neoclassical Canons.
+    The mouth should be 1.5 times the width of the nose.
+
+    Ideal: 1.5 - 1.62 (mouth width = 150% of nose width)
+    > 1.7 -> mouth too wide relative to nose
+    < 1.3 -> mouth too narrow relative to nose
+    """    
+    mouth_width = np.linalg.norm(
+        face_data["lip_left_outer"] - face_data["lip_right_outer"]
+    )
+    nose_width  = np.linalg.norm(
+        face_data["left_alare_tip"] - face_data["right_alare_tip"]
+    )
+
+    return mouth_width / nose_width
