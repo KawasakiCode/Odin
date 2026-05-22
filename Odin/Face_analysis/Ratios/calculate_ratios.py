@@ -412,3 +412,24 @@ def face_height_bigonial_width(face_data):
     )
 
     return face_height / big_width
+
+# Lip Ratio (Lower/Upper)
+def lip_vermilion_ratio(face_data):
+    """
+    Compares the vertical height of the upper lip vermilion
+    to the lower lip vermilion. The lower lip should be
+    fuller than the upper lip.
+
+    Ideal: 1:1.6 (lower lip ~60% taller than upper lip)
+    = 1.0  -> equal lips (overfilled/unnatural appearance)
+    > 2.0  -> lower lip excessively dominant
+    < 1.2  -> upper lip too full relative to lower
+    """
+    upper_lip_h = np.linalg.norm(
+        face_data["upper_lip_top_center"] - face_data["upper_lip_bottom_center"]
+    )
+    lower_lip_h = np.linalg.norm(
+        face_data["lower_lip_top_center"] - face_data["lower_lip_bottom_center"]
+    )
+
+    return lower_lip_h / upper_lip_h
