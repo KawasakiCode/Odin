@@ -468,3 +468,32 @@ def lower_third_split(face_data):
         "upper_pct": upper_seg / total,  # ideal → 0.30
         "lower_pct": lower_seg / total,  # ideal → 0.70
     }   
+
+# Stomion/Canthus Golden Ratio
+def stomion_canthus_ratio(face_data):
+    """
+    Compares the distance from stomion to menton against
+    the distance from stomion to the lateral canthus.
+    An intra-facial Golden Ratio check.
+
+    Stomion to menton : stomion to lateral canthus
+    should follow a 1:1.618 relationship.
+
+    Average of left and right lateral canthus used for
+    a more stable result.
+
+    Ideal: 0.618 (stomion-menton is 1/phi of stomion-canthus)
+    < 0.50 -> chin too short relative to eye distance
+    > 0.75 -> chin too long relative to eye distance
+    """    
+    stomion = (
+        face_data["upper_lip_bottom_center"] +
+        face_data["lower_lip_top_center"]
+    ) / 2
+
+    stomion_to_menton   = np.linalg.norm(stomion - face_data["chin"])
+    stomion_to_lateral_canthus_left = np.linalg.norm(stomion - face_data["left_eye_outer_corner"])
+    stomion_to_lateral_canthus_right = np.linalg.norm(stomion - face_data["right_eye_outer_corner"])
+    stomion_to_lateral_canthus   = (stomion_to_lateral_canthus_left + stomion_to_lateral_canthus_right) / 2
+
+    return stomion_to_menton / stomion_to_lateral_canthus
