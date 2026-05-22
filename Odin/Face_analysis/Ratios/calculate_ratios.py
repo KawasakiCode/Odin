@@ -433,3 +433,38 @@ def lip_vermilion_ratio(face_data):
     )
 
     return lower_lip_h / upper_lip_h
+
+# Lower third split
+def lower_third_split(face_data):
+    """
+    Divides the lower third of the face into two segments:
+    - Upper segment: subnasale to stomion (base of nose to lip meeting point)
+    - Lower segment: stomion to menton (lip meeting point to chin)
+
+    The ideal distribution places 30% of the lower third in
+    the upper segment and 70% in the lower segment. This reflects
+    the ideal vertical proportion of the lips relative to the chin.
+
+    Stomion is approximated as the midpoint between
+    upper_lip_bottom_center and lower_lip_top_center.
+
+    Ideal: upper 0.30 / lower 0.70  (30/70 split)
+    > 0.40 upper -> chin too short / lips sit too low
+    < 0.20 upper -> upper lip too short / chin too dominant
+    """
+    stomion_y = (
+        face_data["upper_lip_bottom_center"][1] +
+        face_data["lower_lip_top_center"][1]
+    ) / 2
+
+    subnasale_y = face_data["base_of_nose"][1]
+    menton_y    = face_data["chin"][1]
+
+    upper_seg = abs(subnasale_y - stomion_y)
+    lower_seg = abs(stomion_y   - menton_y)
+    total     = upper_seg + lower_seg
+
+    return {
+        "upper_pct": upper_seg / total,  # ideal → 0.30
+        "lower_pct": lower_seg / total,  # ideal → 0.70
+    }   
