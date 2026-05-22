@@ -497,3 +497,46 @@ def stomion_canthus_ratio(face_data):
     stomion_to_lateral_canthus   = (stomion_to_lateral_canthus_left + stomion_to_lateral_canthus_right) / 2
 
     return stomion_to_menton / stomion_to_lateral_canthus
+
+# Eye Openness / Eye Aspect Ratio (EAR)
+def eye_aspect_ratio(face_data):
+    """
+    Measures the vertical opening of each eye relative to
+    its horizontal width. Indicates eye openness, alertness,
+    and detects hooding or ptosis.
+
+    EAR = eye_height / eye_width
+
+    Ideal: Female: 0.30 - 0.35 / Male: 0.20 - 0.25
+    < 0.20 -> hooded / ptotic eyes (tired appearance)
+    > 0.40 -> unusually wide eye opening
+
+    Asymmetry between left and right EAR is also a useful
+    attractiveness signal — ideal difference approaches 0.
+    """
+    left_eye_height  = np.linalg.norm(
+        face_data["left_upper_eyelid_center"] -
+        face_data["left_lower_eyelid_center"]
+    )
+    left_eye_width   = np.linalg.norm(
+        face_data["left_eye_outer_corner"] -
+        face_data["left_eye_inner_corner"]
+    )
+    right_eye_height = np.linalg.norm(
+        face_data["right_upper_eyelid_center"] -
+        face_data["right_lower_eyelid_center"]
+    )
+    right_eye_width  = np.linalg.norm(
+        face_data["right_eye_outer_corner"] -
+        face_data["right_eye_inner_corner"]
+    )
+
+    left_EAR  = left_eye_height  / left_eye_width
+    right_EAR = right_eye_height / right_eye_width
+
+    return {
+        "left":      left_EAR,
+        "right":     right_EAR,
+        "average":   (left_EAR + right_EAR) / 2,  # ideal → 0.25–0.35
+        "asymmetry": abs(left_EAR - right_EAR),    # ideal → 0.0
+    }
