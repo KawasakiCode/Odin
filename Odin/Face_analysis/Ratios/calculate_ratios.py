@@ -113,7 +113,7 @@ def height_ratio_36(face_data):
 def canthal_tilt(inner_canthus, outer_canthus):
     dx = outer_canthus[0] - inner_canthus[0]
     dy = outer_canthus[1] - inner_canthus[1]
-    return math.degrees(math.atan2(-dy, dx))
+    return math.degrees(math.atan2(-dy, abs(dx)))
 
 def canthal_tilt_final(face_data):
     """
@@ -208,8 +208,8 @@ def frontal_jaw_contour_angle(face_data):
 
     return {
         "deviation": (left_deviation + right_deviation) / 2,
-        "jaw_slope": (left_jaw_angle + right_jaw_angle) / 2,
-        "canthus_alare_slope": (left_ref_angle + right_ref_angle) / 2
+        "jaw_slope": (abs(abs(left_jaw_angle - 90)) + abs(abs(right_jaw_angle - 90))) / 2,
+        "canthus_alare_slope": (abs(abs(left_ref_angle - 90)) + abs(abs(right_ref_angle - 90))) / 2
     }
 
 # Facial Thirds
