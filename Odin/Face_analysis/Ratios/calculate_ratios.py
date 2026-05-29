@@ -1,7 +1,7 @@
 import numpy as np
 import math
-from Odin.Face_analysis.constants import SYMMETRIC_PAIR_KEYS
-from Face_analysis.utils import angle_at_vertex, line_angle_degrees
+from odin_extra.constants import SYMMETRIC_PAIR_KEYS
+from odin_extra.utils import angle_at_vertex, line_angle_degrees
 
 # Bilateral Symmetry
 def symmetry_score(face_data):
@@ -41,8 +41,13 @@ def symmetry_score(face_data):
 
     euclidean_norm = np.linalg.norm(np.array(diffs))
 
+    biz_width = np.linalg.norm(
+        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+    )
+    normalized = euclidean_norm / biz_width
+
     # Score: 0 = perfect symmetry (lower is better)
-    return euclidean_norm
+    return normalized
 
 # Optimal Length/Width Midface Ratios
 def  width_ratio_46(face_data):
@@ -153,10 +158,10 @@ def fwhr(face_data):
     > 2.2  -> disproportionately wide
     """
     biz_width = np.linalg.norm(
-        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+        face_data["left_zygomatic"][:2] - face_data["right_zygomatic"][:2]
     )
-    bottom_eyebrows = face_data["eyebrows_bottom"]
-    upper_lip_top = face_data["upper_lip_top_center"]
+    bottom_eyebrows = face_data["eyebrows_bottom"][:2]
+    upper_lip_top = face_data["upper_lip_top_center"][:2]
 
     upper_face_height = np.linalg.norm(bottom_eyebrows - upper_lip_top)
 
@@ -186,30 +191,30 @@ def frontal_jaw_contour_angle(face_data):
     """
 
     left_ref_angle = line_angle_degrees(  
-        face_data["left_eye_outer_corner"],
-        face_data["left_alare_tip"]
+        abs(face_data["left_eye_outer_corner"][:2]),
+        abs(face_data["left_alare_tip"][:2])
     )
     left_jaw_angle = line_angle_degrees(  
-        face_data["left_jaw_angle1"],
-        face_data["chin"]
+        abs(face_data["left_jaw_angle1"][:2]),
+        abs(face_data["chin"][:2])
     )
     left_deviation = abs(left_ref_angle - left_jaw_angle)
 
 
     right_ref_angle = line_angle_degrees(  
-        face_data["right_eye_outer_corner"],
-        face_data["right_alare_tip"]
+        abs(face_data["right_eye_outer_corner"][:2]),
+        abs(face_data["right_alare_tip"][:2])
     )
     right_jaw_angle = line_angle_degrees(  
-        face_data["right_jaw_angle1"],
-        face_data["chin"]
+        abs(face_data["right_jaw_angle1"][:2]),
+        abs(face_data["chin"][:2])
     )
     right_deviation = abs(right_ref_angle - right_jaw_angle)
 
     return {
         "deviation": (left_deviation + right_deviation) / 2,
-        "jaw_slope": (abs(abs(left_jaw_angle - 90)) + abs(abs(right_jaw_angle - 90))) / 2,
-        "canthus_alare_slope": (abs(abs(left_ref_angle - 90)) + abs(abs(right_ref_angle - 90))) / 2
+        "jaw_slope": (left_jaw_angle + right_jaw_angle) / 2,
+        "canthus_alare_slope": (90 - left_ref_angle) + (90 - right_ref_angle) / 2
     }
 
 # Facial Thirds
@@ -261,11 +266,11 @@ def bizygomatic_bigonial_ratio(face_data):
     > 1.3  -> extremely tapered (very feminine/heart-shaped)
     """    
     biz_width = np.linalg.norm(  
-        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+        face_data["left_zygomatic"][:2] - face_data["right_zygomatic"][:2]
     )
 
     big_width = np.linalg.norm(
-        face_data["left_jaw_angle1"] - face_data["right_jaw_angle1"]
+        face_data["left_jaw_angle1"][:2] - face_data["right_jaw_angle1"][:2]
     )
 
     return biz_width / big_width
@@ -288,21 +293,21 @@ def facial_fifths(face_data):
     """
 
     left_eye_width = np.linalg.norm(
-        face_data["left_eye_outer_corner"] - face_data["left_eye_inner_corner"]
+        face_data["left_eye_outer_corner"][:2] - face_data["left_eye_inner_corner"][:2]
     )    
 
     right_eye_width = np.linalg.norm(
-        face_data["right_eye_outer_corner"] - face_data["right_eye_inner_corner"]
+        face_data["right_eye_outer_corner"][:2] - face_data["right_eye_inner_corner"][:2]
     )   
 
     avg_eye_width = (left_eye_width + right_eye_width) / 2
 
     face_width = np.linalg.norm(  
-        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+        face_data["left_zygomatic"][:2] - face_data["right_zygomatic"][:2]
     )
 
     intercanthal = np.linalg.norm(
-        face_data["left_eye_inner_corner"] - face_data["right_eye_inner_corner"]
+        face_data["left_eye_inner_corner"][:2] - face_data["right_eye_inner_corner"][:2]
     )
 
     return {
@@ -325,10 +330,10 @@ def orbitonasal_ratio(face_data):
     < 0.8 -> nose too narrow (or eyes too close together)
     """  
     nose_width = np.linalg.norm(  
-        face_data["left_alare_tip"] - face_data["right_alare_tip"]
+        face_data["left_alare_tip"][:2] - face_data["right_alare_tip"][:2]
     )
     intercanthal = np.linalg.norm(
-        face_data["left_eye_inner_corner"] - face_data["right_eye_inner_corner"]
+        face_data["left_eye_inner_corner"][:2] - face_data["right_eye_inner_corner"][:2]
     )
 
     return nose_width / intercanthal 
@@ -344,10 +349,10 @@ def nasofacial_proportion(face_data):
     < 0.20 -> nose too narrow for the face
     """    
     nose_width = np.linalg.norm(
-        face_data["left_alare_tip"] - face_data["right_alare_tip"]
+        face_data["left_alare_tip"][:2] - face_data["right_alare_tip"][:2]
     )
     face_width = np.linalg.norm(  
-        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+        face_data["left_zygomatic"][:2] - face_data["right_zygomatic"][:2]
     )
 
     return nose_width / face_width
@@ -364,10 +369,10 @@ def naso_oral_ratio(face_data):
     < 1.3 -> mouth too narrow relative to nose
     """    
     mouth_width = np.linalg.norm(
-        face_data["lip_left_outer"] - face_data["lip_right_outer"]
+        face_data["lip_left_outer"][:2] - face_data["lip_right_outer"][:2]
     )
     nose_width  = np.linalg.norm(
-        face_data["left_alare_tip"] - face_data["right_alare_tip"]
+        face_data["left_alare_tip"][:2] - face_data["right_alare_tip"][:2]
     )
 
     return mouth_width / nose_width
@@ -385,10 +390,10 @@ def face_golden_ratio(face_data):
     > 1.4  -> face too elongated (very narrow appearance)
     """    
     face_height = np.linalg.norm(
-        face_data["top_center_forehead"] - face_data["chin"]
+        face_data["top_center_forehead"][:2] - face_data["chin"][:2]
     )
     face_width  = np.linalg.norm(
-        face_data["left_zygomatic"] - face_data["right_zygomatic"]
+        face_data["left_zygomatic"][:2] - face_data["right_zygomatic"][:2]
     )
 
     return face_height / face_width
@@ -405,10 +410,10 @@ def face_height_bigonial_width(face_data):
     > 1.7  -> jaw too narrow for face height (very tapered)
     """    
     face_height = np.linalg.norm(
-        face_data["top_center_forehead"] - face_data["chin"]
+        face_data["top_center_forehead"][:2] - face_data["chin"][:2]
     )
     big_width   = np.linalg.norm(
-        face_data["left_jaw_angle1"] - face_data["right_jaw_angle1"]
+        face_data["left_jaw_angle1"][:2] - face_data["right_jaw_angle1"][:2]
     )
 
     return face_height / big_width
@@ -426,10 +431,10 @@ def lip_vermilion_ratio(face_data):
     < 1.2  -> upper lip too full relative to lower
     """
     upper_lip_h = np.linalg.norm(
-        face_data["upper_lip_top_center"] - face_data["upper_lip_bottom_center"]
+        face_data["upper_lip_top_center"][:2] - face_data["upper_lip_bottom_center"][:2]
     )
     lower_lip_h = np.linalg.norm(
-        face_data["lower_lip_top_center"] - face_data["lower_lip_bottom_center"]
+        face_data["lower_lip_top_center"][:2] - face_data["lower_lip_bottom_center"][:2]
     )
 
     return lower_lip_h / upper_lip_h
@@ -487,13 +492,13 @@ def stomion_canthus_ratio(face_data):
     > 0.75 -> chin too long relative to eye distance
     """    
     stomion = (
-        face_data["upper_lip_bottom_center"] +
-        face_data["lower_lip_top_center"]
+        face_data["upper_lip_bottom_center"][:2] +
+        face_data["lower_lip_top_center"][:2]
     ) / 2
 
-    stomion_to_menton   = np.linalg.norm(stomion - face_data["chin"])
-    stomion_to_lateral_canthus_left = np.linalg.norm(stomion - face_data["left_eye_outer_corner"])
-    stomion_to_lateral_canthus_right = np.linalg.norm(stomion - face_data["right_eye_outer_corner"])
+    stomion_to_menton   = np.linalg.norm(stomion - face_data["chin"][:2])
+    stomion_to_lateral_canthus_left = np.linalg.norm(stomion - face_data["left_eye_outer_corner"][:2])
+    stomion_to_lateral_canthus_right = np.linalg.norm(stomion - face_data["right_eye_outer_corner"][:2])
     stomion_to_lateral_canthus   = (stomion_to_lateral_canthus_left + stomion_to_lateral_canthus_right) / 2
 
     return stomion_to_menton / stomion_to_lateral_canthus
@@ -515,20 +520,20 @@ def eye_aspect_ratio(face_data):
     attractiveness signal — ideal difference approaches 0.
     """
     left_eye_height  = np.linalg.norm(
-        face_data["left_upper_eyelid_center"] -
-        face_data["left_lower_eyelid_center"]
+        face_data["left_upper_eyelid_center"][:2] -
+        face_data["left_lower_eyelid_center"][:2]
     )
     left_eye_width   = np.linalg.norm(
-        face_data["left_eye_outer_corner"] -
-        face_data["left_eye_inner_corner"]
+        face_data["left_eye_outer_corner"][:2] -
+        face_data["left_eye_inner_corner"][:2]
     )
     right_eye_height = np.linalg.norm(
-        face_data["right_upper_eyelid_center"] -
-        face_data["right_lower_eyelid_center"]
+        face_data["right_upper_eyelid_center"][:2] -
+        face_data["right_lower_eyelid_center"][:2]
     )
     right_eye_width  = np.linalg.norm(
-        face_data["right_eye_outer_corner"] -
-        face_data["right_eye_inner_corner"]
+        face_data["right_eye_outer_corner"][:2] -
+        face_data["right_eye_inner_corner"][:2]
     )
 
     left_EAR  = left_eye_height  / left_eye_width
