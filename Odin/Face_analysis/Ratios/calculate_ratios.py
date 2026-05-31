@@ -3,6 +3,11 @@ import math
 from Odin.Face_analysis.constants import SYMMETRIC_PAIR_KEYS
 from Odin.Face_analysis.utils import angle_at_vertex, line_angle_degrees
 
+import numpy as np
+import math
+from odin_extra.constants import SYMMETRIC_PAIR_KEYS
+from odin_extra.utils import acute_angle_between, descent_below_horizontal
+
 # Bilateral Symmetry
 def symmetry_score(face_data):
     """
@@ -26,8 +31,8 @@ def symmetry_score(face_data):
     
     diffs = []
     for left_key, right_key in SYMMETRIC_PAIR_KEYS:
-        L = face_data[left_key]
-        R = face_data[right_key]
+        L = face_data[left_key][:2]
+        R = face_data[right_key][:2]
 
         mirrored_lx = 2 * midline_x - L[0]
         mirrored_ly = L[1]
@@ -174,47 +179,56 @@ def frontal_jaw_contour_angle(face_data):
     The frontal jaw contour angle measures the slope of the jawline
     in a frontal photo, compared against a reference line from the
     lateral canthus to the ipsilateral alare (nostril tip).
-    
+
     Unlike the gonial angle (measured from a profile photo), this
-    angle is wider and measures how parallel the jawline runs
-    relative to the canthus-alare reference line.
+    measures how parallel the jawline runs relative to the
+    canthus-alare reference line.
 
-    A deviation of 0° means the jawline is perfectly parallel to
-    the canthus-alare line. The jawline should slope downward
-    slightly from the jaw angle toward the chin.
+    Three values are returned, all folded to [0°, 90°] so the left and
+    right (mirror-image) sides are directly comparable and averaging
+    them is meaningful:
 
-    Ideal: 0°-15° downward deviation from the canthus-alare line
-    Female frontal jaw angle: ~139°-142° (wider, more tapered)
-    Male frontal jaw angle:   ~125°-130° (squarer, more defined)
-    > 15° deviation -> jawline drops too steeply (weak jaw)
-    = 0°            -> perfectly parallel (very defined jaw)
+      - deviation: angle between the jaw segment (jaw angle -> chin)
+        and the canthus-alare reference line. 0° = perfectly parallel
+        (very defined jaw); higher = jawline drops away from the
+        reference. Ideal: 0°-15°.
+      - jaw_slope: how steeply the jaw segment descends below the
+        horizontal (0° = flat, 90° = vertical).
+      - canthus_alare_slope: descent of the reference line below the
+        horizontal, for context.
+
+    (A true gonial angle — ~125°-130° male / ~139°-142° female — needs
+    a profile photo and the mandibular ramus; see the TODO above.)
     """
 
-    left_ref_angle = line_angle_degrees(  
-        abs(face_data["left_eye_outer_corner"][:2]),
-        abs(face_data["left_alare_tip"][:2])
+    # Reference line: lateral canthus -> ipsilateral alare.
+    # Jaw segment: jaw angle (gonion) -> chin (menton).
+    left_deviation = acute_angle_between(
+        face_data["left_eye_outer_corner"][:2], face_data["left_alare_tip"][:2],
+        face_data["left_jaw_angle1"][:2], face_data["chin"][:2],
     )
-    left_jaw_angle = line_angle_degrees(  
-        abs(face_data["left_jaw_angle1"][:2]),
-        abs(face_data["chin"][:2])
+    left_jaw_slope = descent_below_horizontal(
+        face_data["left_jaw_angle1"][:2], face_data["chin"][:2]
     )
-    left_deviation = abs(left_ref_angle - left_jaw_angle)
+    left_ref_slope = descent_below_horizontal(
+        face_data["left_eye_outer_corner"][:2], face_data["left_alare_tip"][:2]
+    )
 
-
-    right_ref_angle = line_angle_degrees(  
-        abs(face_data["right_eye_outer_corner"][:2]),
-        abs(face_data["right_alare_tip"][:2])
+    right_deviation = acute_angle_between(
+        face_data["right_eye_outer_corner"][:2], face_data["right_alare_tip"][:2],
+        face_data["right_jaw_angle1"][:2], face_data["chin"][:2],
     )
-    right_jaw_angle = line_angle_degrees(  
-        abs(face_data["right_jaw_angle1"][:2]),
-        abs(face_data["chin"][:2])
+    right_jaw_slope = descent_below_horizontal(
+        face_data["right_jaw_angle1"][:2], face_data["chin"][:2]
     )
-    right_deviation = abs(right_ref_angle - right_jaw_angle)
+    right_ref_slope = descent_below_horizontal(
+        face_data["right_eye_outer_corner"][:2], face_data["right_alare_tip"][:2]
+    )
 
     return {
         "deviation": (left_deviation + right_deviation) / 2,
-        "jaw_slope": (left_jaw_angle + right_jaw_angle) / 2,
-        "canthus_alare_slope": (90 - left_ref_angle) + (90 - right_ref_angle) / 2
+        "jaw_slope": (left_jaw_slope + right_jaw_slope) / 2,
+        "canthus_alare_slope": (left_ref_slope + right_ref_slope) / 2,
     }
 
 # Facial Thirds
@@ -282,32 +296,32 @@ def facial_fifths(face_data):
     equal to one eye width. Assesses horizontal facial harmony.
 
     Measures:
-    - face_width / avg_eye_width        -> ideal 4.0 - 4.25
+    - face_width / avg_eye_width        -> ideal 5.0
     - intercanthal_dist / avg_eye_width -> ideal 0.95 - 1.15
       (gap between eyes should equal one eye width)
 
-    > 4.5 face ratio  -> face too wide for eye spacing
-    < 3.8 face ratio  -> face too narrow for eye spacing
+    > 5.5 face ratio  -> face too wide for eye spacing
+    < 4.5 face ratio  -> face too narrow for eye spacing
     > 1.15 inter-eye   -> eyes too far apart
     < 0.95 inter-eye   -> eyes too close together
     """
 
     left_eye_width = np.linalg.norm(
-        face_data["left_eye_outer_corner"][:2] - face_data["left_eye_inner_corner"][:2]
+        face_data["left_eye_outer_corner"][1] - face_data["left_eye_inner_corner"][1]
     )    
 
     right_eye_width = np.linalg.norm(
-        face_data["right_eye_outer_corner"][:2] - face_data["right_eye_inner_corner"][:2]
+        face_data["right_eye_outer_corner"][1] - face_data["right_eye_inner_corner"][1]
     )   
 
     avg_eye_width = (left_eye_width + right_eye_width) / 2
 
     face_width = np.linalg.norm(  
-        face_data["left_zygomatic"][:2] - face_data["right_zygomatic"][:2]
+        face_data["left_zygomatic"][1] - face_data["right_zygomatic"][1]
     )
 
     intercanthal = np.linalg.norm(
-        face_data["left_eye_inner_corner"][:2] - face_data["right_eye_inner_corner"][:2]
+        face_data["left_eye_inner_corner"][1] - face_data["right_eye_inner_corner"][1]
     )
 
     return {
