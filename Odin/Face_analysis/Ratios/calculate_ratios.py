@@ -1,12 +1,7 @@
 import numpy as np
 import math
 from Odin.Face_analysis.constants import SYMMETRIC_PAIR_KEYS
-from Odin.Face_analysis.utils import angle_at_vertex, line_angle_degrees
-
-import numpy as np
-import math
-from odin_extra.constants import SYMMETRIC_PAIR_KEYS
-from odin_extra.utils import acute_angle_between, descent_below_horizontal
+from Odin.Face_analysis.utils import acute_angle_between, descent_below_horizontal
 
 # Bilateral Symmetry
 def symmetry_score(face_data):

@@ -1,4 +1,15 @@
 def extract_face_data(landmarks):
+    # Estimated trichion (hairline). MediaPipe does not model the scalp:
+    # landmark 10 is the topmost mesh vertex and sits on the upper forehead,
+    # biased below the true hairline. We extend the glabella -> forehead_top
+    # vector upward so the estimate scales with face size and follows head
+    # tilt (a fixed pixel offset does neither). TRICHION_K is tuned visually
+    # against the debug overlays.
+    TRICHION_K = 0.45
+    forehead_top = landmarks[10]
+    glabella = (landmarks[8] + landmarks[9]) / 2
+    trichion = forehead_top + TRICHION_K * (forehead_top - glabella)
+
     face_data = {
             # Left Eye Contour
             "left_upper_eyelid_center": landmarks[159],
@@ -45,8 +56,8 @@ def extract_face_data(landmarks):
             "base_of_nose": landmarks[2],
             "top_of_nose_bridge": landmarks[168],
             "nose_tip": landmarks[4],
-            "left_alare_tip": landmarks[129],
-            "right_alare_tip": landmarks[358],
+            "left_alare_tip": landmarks[102],
+            "right_alare_tip": landmarks[331],
 
             # Lips
             "lip_left_outer": landmarks[61],
@@ -68,8 +79,9 @@ def extract_face_data(landmarks):
             "right_jaw_bottom": landmarks[397],
 
             # Forehead
-            "top_center_forehead": landmarks[10],
-            "glabella": (landmarks[8] + landmarks[9]) / 2,
+            # top_center_forehead is the estimated trichion, not raw landmark 10.
+            "top_center_forehead": trichion,
+            "glabella": glabella,
 
             # Cheeks
             "left_cheek_apex": landmarks[50],
