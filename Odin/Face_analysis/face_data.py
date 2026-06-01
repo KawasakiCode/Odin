@@ -56,8 +56,10 @@ def extract_face_data(landmarks):
             "base_of_nose": landmarks[2],
             "top_of_nose_bridge": landmarks[168],
             "nose_tip": landmarks[4],
-            "left_alare_tip": landmarks[102],
-            "right_alare_tip": landmarks[331],
+            # Alare wing points: 48/278 (alar base). Switched from 102/331,
+            # which sat inconsistently medial/lateral and gave mixed nose widths.
+            "left_alare_tip": landmarks[48],
+            "right_alare_tip": landmarks[278],
 
             # Lips
             "lip_left_outer": landmarks[61],
