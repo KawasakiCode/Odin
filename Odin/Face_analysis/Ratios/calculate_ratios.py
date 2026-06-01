@@ -278,8 +278,12 @@ def bizygomatic_bigonial_ratio(face_data):
         face_data["left_zygomatic"][:2] - face_data["right_zygomatic"][:2]
     )
 
+    # Bigonial width from jaw_angle2 (58/288). The upper gonion points
+    # (132/361) read too wide (taper ratio fell to ~1.06) while jaw_bottom
+    # (172/397) read too narrow (overshot to ~1.27); 58/288 sits between them
+    # and lands the taper closer to its ideal.
     big_width = np.linalg.norm(
-        face_data["left_jaw_angle1"][:2] - face_data["right_jaw_angle1"][:2]
+        face_data["left_jaw_angle2"][:2] - face_data["right_jaw_angle2"][:2]
     )
 
     return biz_width / big_width
@@ -302,21 +306,21 @@ def facial_fifths(face_data):
     """
 
     left_eye_width = np.linalg.norm(
-        face_data["left_eye_outer_corner"][1] - face_data["left_eye_inner_corner"][1]
+        face_data["left_eye_outer_corner"][0] - face_data["left_eye_inner_corner"][0]
     )    
 
     right_eye_width = np.linalg.norm(
-        face_data["right_eye_outer_corner"][1] - face_data["right_eye_inner_corner"][1]
+        face_data["right_eye_outer_corner"][0] - face_data["right_eye_inner_corner"][0]
     )   
 
     avg_eye_width = (left_eye_width + right_eye_width) / 2
 
     face_width = np.linalg.norm(  
-        face_data["left_zygomatic"][1] - face_data["right_zygomatic"][1]
+        face_data["left_zygomatic"][0] - face_data["right_zygomatic"][0]
     )
 
     intercanthal = np.linalg.norm(
-        face_data["left_eye_inner_corner"][1] - face_data["right_eye_inner_corner"][1]
+        face_data["left_eye_inner_corner"][0] - face_data["right_eye_inner_corner"][0]
     )
 
     return {
