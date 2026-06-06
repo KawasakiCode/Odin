@@ -1,12 +1,16 @@
 # The path of the image to get rated
 IMAGEPATH = "image.jpg"
 
+# Which trained model to use for this photo: "male" or "female".
+# Each sex has its own model in models/model_<sex>.joblib.
+SEX = "female"
+
 # A list of pairs of all the mediapipe landmarks that are used
 # For example left eye outer corner is landmark[33] and right eye is landmark[263]
 # Compare x coordinates of all these pairs to get a symmetry score 
 SYMMETRIC_PAIR_KEYS = [
     ("left_eye_outer_corner",          "right_eye_outer_corner"),
-    ("left_eye_inner_corner",          "right_eye_inner_conter"),
+    ("left_eye_inner_corner",          "right_eye_inner_corner"),
     ("left_upper_eyelid_center",       "right_upper_eyelid_center"),
     ("left_lower_eyelid_center",       "right_lower_eyelid_center"),
     ("left_eyebrow_upper_outer_point", "right_eyebrow_upper_outer_point"),

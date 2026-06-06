@@ -15,7 +15,7 @@ All functions take a BGR image (OpenCV convention) and pixel-space landmarks.
 import cv2
 import numpy as np
 
-from odin_extra.regions import extract_regions
+from Odin.Face_analysis.Ratios.regions import extract_regions
 
 # Luminance (0-255, ITU-R BT.601) below which an iris pixel is treated as pupil
 # / deep shadow and dropped before averaging. Deliberately low: deep-brown
