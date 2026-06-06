@@ -7,8 +7,20 @@ features (appearance), assembles them into the exact 40-feature vector the
 trained models expect, and prints an attractiveness score on a 1-10 scale from
 both the RandomForest and the XGBoost regressor.
 
-Run from the project root:  python -m Odin.main
+Can be run either as a module from the project root (python -m Odin.main) or
+directly (python Odin/main.py / the IDE run button): the sys.path bootstrap
+below puts the project root on the import path so the absolute `Odin.*` imports
+resolve in both cases.
 """
+import sys
+from pathlib import Path
+
+# Project root = the directory that contains the `Odin` package (one level up
+# from this file). Ensure it is importable before any `from Odin...` import.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import joblib
 import pandas as pd
 
@@ -26,8 +38,8 @@ from Odin.Face_analysis.Ratios.calculate_ratios import (
 from Odin.Face_analysis.Ratios.appearance import appearance_features
 
 MODEL_PATHS = {
-    "male": "models/model_male.joblib",
-    "female": "models/model_female.joblib",
+    "male": PROJECT_ROOT / "models" / "model_male.joblib",
+    "female": PROJECT_ROOT / "models" / "model_female.joblib",
 }
 
 
