@@ -4,10 +4,11 @@ Odin entry point.
 Reads the photo at constants.IMAGEPATH, extracts MediaPipe landmarks, computes
 the geometric ratios (calculate_ratios) and the colour/texture appearance
 features (appearance), assembles them into the exact 40-feature vector the
-trained models expect, and prints an attractiveness score (1-10) from both the
-RandomForest and the XGBoost regressor. The models are already trained to output
-on a 1-10 scale (SCUT labels span ~1.04-9.44, mean ~5.5), so the raw prediction
-is reported as-is — no rescaling.
+trained model expects, and prints the XGBoost attractiveness score (1-10). The
+model is trained directly on the 1-10 scale (SCUT labels span ~1.04-9.44, mean
+~5.5), so the raw prediction is reported as-is — no rescaling. (RandomForest was
+dropped: as a leaf-averaging model it regresses the tails toward the mean and
+can't follow the attractiveness curve; XGBoost tracks it.)
 
 Can be run either as a module from the project root (python -m Odin.main) or
 directly (python Odin/main.py / the IDE run button): the sys.path bootstrap
@@ -93,15 +94,18 @@ def build_features(face_data, appearance):
 def main():
     landmarks, image_bgr = calculate_landmarks_array(IMAGEPATH)
 
-    face_data = extract_face_data(landmarks)
-
-    # Appearance samples raw pixels, so it needs pixel-space landmarks. The
-    # mesh is normalised (x by width, y by height); scale it to this image.
+    # Training (data_scut.py) computes EVERY feature on pixel-space landmarks
+    # (lm.x*w, lm.y*h, lm.z*w), so we must too — otherwise the angle/ratio
+    # features differ on non-square photos (they coincide only on square images
+    # like SCUT's 350x350). Scale the normalised mesh to this image once and use
+    # it for both the geometric ratios and the appearance sampling.
     h, w = image_bgr.shape[:2]
     pixel_landmarks = landmarks.copy()
     pixel_landmarks[:, 0] *= w
     pixel_landmarks[:, 1] *= h
     pixel_landmarks[:, 2] *= w
+
+    face_data = extract_face_data(pixel_landmarks)
     appearance = appearance_features(image_bgr, pixel_landmarks)
 
     features = build_features(face_data, appearance)
@@ -111,12 +115,9 @@ def main():
     # Order the columns to exactly match what the models were trained on.
     X = pd.DataFrame([features], columns=feature_names)
 
-    rf_score = float(model["random_forest"].predict(X)[0])
-    xgb_score = float(model["xgboost"].predict(X)[0])
+    score = float(model["xgboost"].predict(X)[0])
 
-    print(f"Attractiveness score ({model['label']}), 1-10 scale:")
-    print(f"  RandomForest : {rf_score:.2f}")
-    print(f"  XGBoost      : {xgb_score:.2f}")
+    print(f"Attractiveness ({model['label']}): {score:.2f} / 10")
 
 
 if __name__ == "__main__":

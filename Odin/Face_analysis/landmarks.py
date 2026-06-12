@@ -40,12 +40,24 @@ def calculate_landmarks_array(image_path):
     """
     model_path = _resolve_model_path()
 
+    # Resolve the image path against the project root when relative, so it is
+    # found regardless of the working directory (IDE run button vs `python -m`).
+    # cv2.imread silently resolves a relative path against the CWD and returns
+    # None if it isn't there — which looks like "no image" even when the file
+    # exists elsewhere.
+    resolved_path = image_path
+    if not os.path.isabs(resolved_path):
+        resolved_path = os.path.join(_PROJECT_ROOT, resolved_path)
+
     # Read image with cv2 (BGR). The BGR image is returned too: the appearance
     # features (colour / texture) sample raw pixels and need pixel-space
     # landmarks scaled by this image's dimensions.
-    image = cv2.imread(image_path)
+    image = cv2.imread(resolved_path)
     if image is None:
-        raise FileNotFoundError(f"Could not read image at {image_path!r}")
+        raise FileNotFoundError(
+            f"Could not read image at {resolved_path!r} (IMAGEPATH={image_path!r}). "
+            "Make sure the file exists there and is a readable image (jpg/png/etc)."
+        )
 
     # MediaPipe expects RGB; cv2 gives BGR.
     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -62,7 +74,7 @@ def calculate_landmarks_array(image_path):
         result = landmarker.detect(mp_image)
 
     if not result.face_landmarks:
-        raise ValueError(f"No face detected in image at {image_path!r}")
+        raise ValueError(f"No face detected in image at {resolved_path!r}")
 
     face_landmarks = result.face_landmarks[0]
 
