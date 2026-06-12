@@ -4,8 +4,10 @@ Odin entry point.
 Reads the photo at constants.IMAGEPATH, extracts MediaPipe landmarks, computes
 the geometric ratios (calculate_ratios) and the colour/texture appearance
 features (appearance), assembles them into the exact 40-feature vector the
-trained models expect, and prints an attractiveness score on a 1-10 scale from
-both the RandomForest and the XGBoost regressor.
+trained models expect, and prints an attractiveness score (1-10) from both the
+RandomForest and the XGBoost regressor. The models are already trained to output
+on a 1-10 scale (SCUT labels span ~1.04-9.44, mean ~5.5), so the raw prediction
+is reported as-is — no rescaling.
 
 Can be run either as a module from the project root (python -m Odin.main) or
 directly (python Odin/main.py / the IDE run button): the sys.path bootstrap
@@ -41,11 +43,6 @@ MODEL_PATHS = {
     "male": PROJECT_ROOT / "models" / "model_male.joblib",
     "female": PROJECT_ROOT / "models" / "model_female.joblib",
 }
-
-
-def to_ten(raw):
-    """Map the model's 1-7 prediction onto a 1-10 scale (1->1, 7->10)."""
-    return 1 + (raw - 1) * 1.5
 
 
 def build_features(face_data, appearance):
@@ -114,8 +111,8 @@ def main():
     # Order the columns to exactly match what the models were trained on.
     X = pd.DataFrame([features], columns=feature_names)
 
-    rf_score = to_ten(float(model["random_forest"].predict(X)[0]))
-    xgb_score = to_ten(float(model["xgboost"].predict(X)[0]))
+    rf_score = float(model["random_forest"].predict(X)[0])
+    xgb_score = float(model["xgboost"].predict(X)[0])
 
     print(f"Attractiveness score ({model['label']}), 1-10 scale:")
     print(f"  RandomForest : {rf_score:.2f}")
