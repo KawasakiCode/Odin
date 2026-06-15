@@ -11,6 +11,19 @@ SEX = "male"
 # Resolved relative to the project root in landmarks.py.
 FACE_LANDMARKER_TASK = "models/face_landmarker.task"
 
+# --- Male-only output calibration (presentation layer) ---------------------
+# The SCUT-trained male model compresses scores toward the mean, so strong
+# faces read too low. This linearly stretches predictions ABOVE the male mean
+# (faces at/below the mean are left unchanged), with the boost growing with
+# distance from the mean, and hard-caps the result at the highest score the
+# model produced on the dataset (xgb_pred_max in the bundle) so it can't run
+# past what the model ever output. Anchored so a raw score of ANCHOR_SCORE gets
+# +ANCHOR_AMOUNT. Applies to the MALE model only — female is left as-is.
+# NOTE: this is cosmetic range-stretching; it cannot fix ranking (a face the
+# model put below the mean still gets no boost).
+MALE_BOOST_ANCHOR_SCORE = 6.28
+MALE_BOOST_ANCHOR_AMOUNT = 1.5
+
 # A list of pairs of all the mediapipe landmarks that are used
 # For example left eye outer corner is landmark[33] and right eye is landmark[263]
 # Compare x coordinates of all these pairs to get a symmetry score 

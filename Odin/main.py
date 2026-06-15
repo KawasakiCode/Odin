@@ -29,7 +29,9 @@ import pandas as pd
 
 from Odin.Face_analysis.landmarks import calculate_landmarks_array
 from Odin.Face_analysis.face_data import extract_face_data
-from Odin.Face_analysis.constants import IMAGEPATH, SEX
+from Odin.Face_analysis.constants import (
+    IMAGEPATH, SEX, MALE_BOOST_ANCHOR_SCORE, MALE_BOOST_ANCHOR_AMOUNT,
+)
 from Odin.Face_analysis.Ratios.calculate_ratios import (
     bizygomatic_bigonial_ratio, canthal_tilt_final, eye_aspect_ratio,
     face_golden_ratio, face_height_bigonial_width, facial_fifths,
@@ -44,6 +46,24 @@ MODEL_PATHS = {
     "male": PROJECT_ROOT / "models" / "model_male.joblib",
     "female": PROJECT_ROOT / "models" / "model_female.joblib",
 }
+
+
+def male_boost(raw, model):
+    """
+    Presentation-only calibration for the MALE model (see constants.py).
+
+    Linearly stretches scores above the male prediction mean — the boost grows
+    with distance from the mean — and caps the result at the highest score the
+    model produced on the dataset. Scores at/below the mean are unchanged.
+    Returns the raw score unchanged if the calibration stats aren't in the
+    bundle (e.g. an older model file).
+    """
+    mean = model.get("xgb_pred_mean")
+    cap = model.get("xgb_pred_max")
+    if mean is None or cap is None or raw <= mean:
+        return raw
+    slope = MALE_BOOST_ANCHOR_AMOUNT / (MALE_BOOST_ANCHOR_SCORE - mean)
+    return min(raw + slope * (raw - mean), cap)
 
 
 def build_features(face_data, appearance):
@@ -116,6 +136,11 @@ def main():
     X = pd.DataFrame([features], columns=feature_names)
 
     score = float(model["xgboost"].predict(X)[0])
+
+    # The male model compresses strong faces toward the mean; apply the
+    # presentation-layer boost (female is left unchanged).
+    if model.get("label") == "MALE":
+        score = male_boost(score, model)
 
     print(f"Attractiveness ({model['label']}): {score:.2f} / 10")
 
