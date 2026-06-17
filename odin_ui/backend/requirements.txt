@@ -1,0 +1,5 @@
+# API layer only — the face pipeline deps (mediapipe, opencv-python, numpy,
+# pandas, joblib, xgboost, scikit-learn) come from the project's main venv.
+fastapi
+uvicorn[standard]
+python-multipart
