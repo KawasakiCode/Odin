@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from Odin.Face_analysis.landmarks import calculate_landmarks_array
 from Odin.Face_analysis.face_data import extract_face_data
 from Odin.Face_analysis.Ratios.appearance import appearance_features
-from Odin.main import build_features, male_boost, MODEL_PATHS
+from Odin.main import add_shape_features, build_features, male_boost, MODEL_PATHS
 
 app = FastAPI(title="Odin API")
 app.add_middleware(
@@ -92,6 +92,70 @@ APPEARANCE_KEYS = [
     "lip_skin_redness_contrast", "eye_skin_redness_contrast", "facial_contrast_avg",
 ]
 
+# MediaPipe 478-mesh indices each geometric ratio depends on (mirrors the
+# face_data.py mapping). The UI highlights only these points when a ratio is
+# hovered, and the union of all of them is the default overlay. Composite points
+# expand to their source indices (trichion -> 10/8/9, glabella -> 8/9, etc.).
+RATIO_LANDMARKS = {
+    "symmetry": [33, 133, 263, 362, 159, 145, 386, 374, 70, 107, 46, 55, 52, 105,
+                 300, 336, 276, 285, 282, 334, 48, 278, 61, 291, 234, 454, 132,
+                 361, 58, 288, 50, 280, 205, 425, 10, 8, 9, 168, 4, 2, 0, 152],
+    "width_ratio_46": [468, 473, 234, 454],
+    "height_ratio_36": [468, 473, 13, 14, 10, 8, 9, 152],
+    "canthal_average": [33, 133, 263, 362],
+    "fwhr": [234, 454, 55, 285, 46, 276, 0],
+    "jaw_contour_deviation": [33, 48, 132, 152, 263, 278, 361],
+    "jaw_contour_jaw_slope": [132, 152, 361],
+    "jaw_contour_canthus_alare_slope": [33, 48, 263, 278],
+    "upper_third": [10, 8, 9, 2, 152],
+    "middle_third": [10, 8, 9, 2, 152],
+    "lower_third": [10, 8, 9, 2, 152],
+    "bizygomatic_bigonial_ratio": [234, 454, 58, 288],
+    "facial_fifths": [33, 133, 263, 362, 234, 454],
+    "inter_eye_ratio": [33, 133, 263, 362],
+    "orbitonasal_ratio": [48, 278, 133, 362],
+    "nasofacial_proportion": [48, 278, 234, 454],
+    "naso_oral_ratio": [61, 291, 48, 278],
+    "face_golden_ratio": [10, 8, 9, 152, 234, 454],
+    "face_height_bigonial_width": [10, 8, 9, 152, 132, 361],
+    "lip_vermilion_ratio": [0, 13, 14, 17],
+    "lower_third_upper_split": [2, 13, 14, 152],
+    "lower_third_lower_split": [2, 13, 14, 152],
+    "stomion_canthus_ratio": [13, 14, 152, 33, 263],
+    "ear_avg": [159, 145, 33, 133, 386, 374, 263, 362],
+    "ear_asymmetry": [159, 145, 33, 133, 386, 374, 263, 362],
+}
+
+# Ideal/target per ratio as (male, female) display strings (ranges kept as text).
+# Sources: the docstrings in calculate_ratios.py.
+IDEALS = {
+    "symmetry": ("→ 0", "→ 0"),
+    "width_ratio_46": ("0.46", "0.46"),
+    "height_ratio_36": ("0.36", "0.36"),
+    "canthal_average": ("+3 to +5°", "+5 to +8°"),
+    "fwhr": ("1.90–2.05", "1.75–1.90"),
+    "jaw_contour_deviation": ("0–15°", "0–15°"),
+    "jaw_contour_jaw_slope": ("—", "—"),
+    "jaw_contour_canthus_alare_slope": ("—", "—"),
+    "upper_third": ("0.310", "0.295"),
+    "middle_third": ("0.305", "0.324"),
+    "lower_third": ("0.385", "0.382"),
+    "bizygomatic_bigonial_ratio": ("1.128", "1.174"),
+    "facial_fifths": ("5.00", "5.00"),
+    "inter_eye_ratio": ("0.95–1.15", "0.95–1.15"),
+    "orbitonasal_ratio": ("1.00", "≤1.00"),
+    "nasofacial_proportion": ("0.25", "0.25"),
+    "naso_oral_ratio": ("1.50–1.62", "1.50–1.62"),
+    "face_golden_ratio": ("1.35", "1.30"),
+    "face_height_bigonial_width": ("1.566", "1.613"),
+    "lip_vermilion_ratio": ("1.60", "1.60"),
+    "lower_third_upper_split": ("0.30", "0.30"),
+    "lower_third_lower_split": ("0.70", "0.70"),
+    "stomion_canthus_ratio": ("0.618", "0.618"),
+    "ear_avg": ("0.20–0.25", "0.30–0.35"),
+    "ear_asymmetry": ("→ 0", "→ 0"),
+}
+
 
 def _num(v):
     """JSON-safe number: floats only, NaN/inf -> None."""
@@ -101,9 +165,15 @@ def _num(v):
     return None if math.isnan(v) or math.isinf(v) else round(v, 4)
 
 
-def _items(feats, keys):
-    return [{"key": k, "label": LABELS.get(k, k), "value": _num(feats.get(k))}
-            for k in keys]
+def _items(feats, keys, sex):
+    idx = 0 if sex == "male" else 1
+    return [{
+        "key": k,
+        "label": LABELS.get(k, k),
+        "value": _num(feats.get(k)),
+        "ideal": IDEALS[k][idx] if k in IDEALS else None,
+        "landmarks": RATIO_LANDMARKS.get(k, []),
+    } for k in keys]
 
 
 def _hex(feats, prefix):
@@ -156,6 +226,7 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
     feats = build_features(extract_face_data(px), appearance_features(img, px))
 
     model = MODELS[sex]
+    add_shape_features(feats, px, model)
     X = pd.DataFrame([feats], columns=model["feature_names"])
     raw = float(model["xgboost"].predict(X)[0])
     score = male_boost(raw, model) if model.get("label") == "MALE" else raw
@@ -168,8 +239,8 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
         "score_raw": round(raw, 2),
         "boosted": model.get("label") == "MALE" and abs(score - raw) > 1e-6,
         "landmarks": [[round(float(x), 1), round(float(y), 1)] for x, y, _ in px],
-        "ratios": _items(feats, GEOM_KEYS),
-        "appearance": _items(feats, APPEARANCE_KEYS),
+        "ratios": _items(feats, GEOM_KEYS, sex),
+        "appearance": _items(feats, APPEARANCE_KEYS, sex),
         "colors": [
             {"label": "Lips", "hex": _hex(feats, "lips")},
             {"label": "Eyes", "hex": _hex(feats, "eye")},

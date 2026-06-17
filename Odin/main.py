@@ -66,6 +66,21 @@ def male_boost(raw, model):
     return min(raw + slope * (raw - mean), cap)
 
 
+def add_shape_features(features, pixel_landmarks, model):
+    """
+    Append Procrustes shape features (averageness + shape-PCA) in place, if the
+    model bundle carries a shape model. No-op for older bundles without one, so
+    the pipeline stays backward-compatible.
+    """
+    pca = model.get("shape_pca")
+    ref = model.get("shape_ref_mean")
+    if pca is None or ref is None:
+        return features
+    from Odin.Face_analysis.Ratios.shape import shape_feature_dict
+    features.update(shape_feature_dict(pixel_landmarks[:, :2], ref, pca))
+    return features
+
+
 def build_features(face_data, appearance):
     """
     Flatten the ratio + appearance results into the {name: value} feature map
@@ -131,6 +146,7 @@ def main():
     features = build_features(face_data, appearance)
 
     model = joblib.load(MODEL_PATHS[SEX])
+    add_shape_features(features, pixel_landmarks, model)
     feature_names = model["feature_names"]
     # Order the columns to exactly match what the models were trained on.
     X = pd.DataFrame([features], columns=feature_names)

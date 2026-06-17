@@ -16,7 +16,11 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showLandmarks, setShowLandmarks] = useState(true)
+  const [hovered, setHovered] = useState<string | null>(null)
+
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const imgElRef = useRef<HTMLImageElement | null>(null)
+  const loadedUrlRef = useRef<string | null>(null)
 
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = e.target.files?.[0]
@@ -24,6 +28,7 @@ export default function App() {
     setFile(picked)
     setResult(null)
     setError(null)
+    setHovered(null)
     setImageUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev)
       return URL.createObjectURL(picked)
@@ -44,33 +49,61 @@ export default function App() {
     }
   }
 
-  // Draw the uploaded image to the canvas, then overlay the landmark dots.
-  // The canvas is sized to the image's natural pixels so the backend's
-  // pixel-space landmark coords map 1:1; CSS scales the canvas to fit.
+  // Draw the photo + landmark overlay. The image element is cached so that
+  // hovering a ratio (which only changes which dots are drawn) doesn't reload
+  // the image and flicker.
   useEffect(() => {
     if (!imageUrl) return
     const canvas = canvasRef.current
     if (!canvas) return
-    const img = new Image()
-    img.onload = () => {
+
+    const paint = (img: HTMLImageElement) => {
       canvas.width = img.naturalWidth
       canvas.height = img.naturalHeight
       const ctx = canvas.getContext('2d')
       if (!ctx) return
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       ctx.drawImage(img, 0, 0)
-      if (result && showLandmarks) {
-        const radius = Math.max(1, Math.round(canvas.width / 260))
-        ctx.fillStyle = 'rgba(0, 230, 150, 0.85)'
-        for (const [x, y] of result.landmarks) {
-          ctx.beginPath()
-          ctx.arc(x, y, radius, 0, Math.PI * 2)
-          ctx.fill()
-        }
+      if (!result || !showLandmarks) return
+
+      // Default = union of all landmarks any ratio uses. Hover = just that
+      // ratio's landmarks, drawn bigger/brighter.
+      let indices: number[]
+      let highlight = false
+      const item = hovered ? result.ratios.find((r) => r.key === hovered) : undefined
+      if (item && item.landmarks.length) {
+        indices = item.landmarks
+        highlight = true
+      } else {
+        const used = new Set<number>()
+        result.ratios.forEach((r) => r.landmarks.forEach((i) => used.add(i)))
+        indices = [...used]
+      }
+
+      const radius = Math.max(1, Math.round(canvas.width / (highlight ? 110 : 320)))
+      ctx.fillStyle = highlight ? 'rgba(255, 205, 50, 0.95)' : 'rgba(0, 230, 150, 0.85)'
+      for (const i of indices) {
+        const p = result.landmarks[i]
+        if (!p) continue
+        ctx.beginPath()
+        ctx.arc(p[0], p[1], radius, 0, Math.PI * 2)
+        ctx.fill()
       }
     }
-    img.src = imageUrl
-  }, [imageUrl, result, showLandmarks])
+
+    const cached = imgElRef.current
+    if (cached && loadedUrlRef.current === imageUrl) {
+      paint(cached)
+    } else {
+      const img = new Image()
+      img.onload = () => {
+        imgElRef.current = img
+        loadedUrlRef.current = imageUrl
+        paint(img)
+      }
+      img.src = imageUrl
+    }
+  }, [imageUrl, result, showLandmarks, hovered])
 
   return (
     <div className="app">
@@ -151,29 +184,44 @@ export default function App() {
                 </div>
               )}
 
-              <h3>Ratios</h3>
-              <table>
-                <tbody>
-                  {result.ratios.map((r) => (
-                    <tr key={r.key}>
-                      <td>{r.label}</td>
-                      <td className="num">{fmt(r.value)}</td>
+              <div className="metrics">
+                <h3>Ratios <span className="hint">hover a row to highlight its landmarks</span></h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Ratio</th>
+                      <th className="num">Value</th>
+                      <th className="num">Ideal ({result.sex})</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {result.ratios.map((r) => (
+                      <tr
+                        key={r.key}
+                        className={hovered === r.key ? 'hl' : ''}
+                        onMouseEnter={() => setHovered(r.key)}
+                        onMouseLeave={() => setHovered((h) => (h === r.key ? null : h))}
+                      >
+                        <td>{r.label}</td>
+                        <td className="num">{fmt(r.value)}</td>
+                        <td className="num ideal">{r.ideal ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
 
-              <h3>Appearance</h3>
-              <table>
-                <tbody>
-                  {result.appearance.map((r) => (
-                    <tr key={r.key}>
-                      <td>{r.label}</td>
-                      <td className="num">{fmt(r.value)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                <h3>Appearance</h3>
+                <table>
+                  <tbody>
+                    {result.appearance.map((r) => (
+                      <tr key={r.key}>
+                        <td>{r.label}</td>
+                        <td className="num">{fmt(r.value)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </>
           ) : (
             <div className="placeholder small">Results will appear here</div>

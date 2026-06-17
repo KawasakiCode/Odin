@@ -138,9 +138,39 @@ header h1 {
 .chip { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border); }
 .hex { font-variant-numeric: tabular-nums; }
 
-.results h3 { margin: 16px 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+/* Scrollable metrics area so a long ratio list never overflows the panel. */
+.metrics { max-height: 56vh; overflow-y: auto; padding-right: 6px; }
+.metrics::-webkit-scrollbar { width: 8px; }
+.metrics::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.results h3 {
+  margin: 14px 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  padding: 6px 0;
+}
+.results h3 .hint { text-transform: none; letter-spacing: 0; font-size: 11px; opacity: 0.7; margin-left: 8px; }
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
 td { padding: 6px 0; border-bottom: 1px solid var(--border); }
-td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.ideal { color: var(--muted); padding-left: 12px; }
 tr:last-child td { border-bottom: none; }
+
+/* Hover a ratio row to highlight it (and its landmarks on the canvas). */
+tbody tr { cursor: default; }
+tbody tr.hl { background: rgba(255, 205, 50, 0.12); }
+tbody tr.hl td:first-child { color: #ffd24a; }

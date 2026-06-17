@@ -2,6 +2,8 @@ export interface RatioItem {
   key: string
   label: string
   value: number | null
+  ideal: string | null
+  landmarks: number[]
 }
 
 export interface ColorItem {
