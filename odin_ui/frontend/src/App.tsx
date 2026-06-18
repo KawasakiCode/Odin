@@ -18,9 +18,22 @@ export default function App() {
   const [showLandmarks, setShowLandmarks] = useState(true)
   const [hovered, setHovered] = useState<string | null>(null)
 
+  const [paneHeight, setPaneHeight] = useState<number>()
+
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasPaneRef = useRef<HTMLDivElement>(null)
   const imgElRef = useRef<HTMLImageElement | null>(null)
   const loadedUrlRef = useRef<string | null>(null)
+
+  // Keep the results panel the same height as the image container so the ratio
+  // list scrolls inside it instead of overflowing below the photo.
+  useEffect(() => {
+    const el = canvasPaneRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setPaneHeight(el.offsetHeight))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = e.target.files?.[0]
@@ -153,7 +166,7 @@ export default function App() {
       {error && <div className="error">{error}</div>}
 
       <div className="layout">
-        <div className="canvas-pane">
+        <div className="canvas-pane" ref={canvasPaneRef}>
           {imageUrl ? (
             <canvas ref={canvasRef} />
           ) : (
@@ -161,7 +174,7 @@ export default function App() {
           )}
         </div>
 
-        <aside className="results">
+        <aside className="results" style={{ maxHeight: paneHeight }}>
           {result ? (
             <>
               <div className="score-card">

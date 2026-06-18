@@ -121,6 +121,9 @@ header h1 {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;            /* the inner .metrics area does the scrolling */
 }
 
 .score-card {
@@ -128,18 +131,21 @@ header h1 {
   padding: 12px 0 18px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 14px;
+  flex-shrink: 0;
 }
 .score-value { font-size: 54px; font-weight: 800; color: var(--accent); line-height: 1; }
 .score-label { color: var(--muted); text-transform: capitalize; margin-top: 4px; }
 .score-note { color: var(--muted); font-size: 12px; margin-top: 6px; }
 
-.swatches { display: flex; gap: 14px; justify-content: center; margin-bottom: 14px; }
+.swatches { display: flex; gap: 14px; justify-content: center; margin-bottom: 14px; flex-shrink: 0; }
 .swatch { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
 .chip { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border); }
 .hex { font-variant-numeric: tabular-nums; }
 
-/* Scrollable metrics area so a long ratio list never overflows the panel. */
-.metrics { max-height: 56vh; overflow-y: auto; padding-right: 6px; }
+/* Scrollable metrics area. Flexes to fill the space left under the score card /
+   swatches, with the panel itself capped to the image height (set inline from
+   JS), so the ratio list scrolls instead of overflowing below the photo. */
+.metrics { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 6px; }
 .metrics::-webkit-scrollbar { width: 8px; }
 .metrics::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
