@@ -1,68 +1,215 @@
-# Facial Attractiveness Ratio Analyzer
-This project analyzes a photograph of a human face to calculate structural proportions and assess attractiveness based on ratios established in scientific literature. It uses Google's MediaPipe AI to extract a highly detailed 3D topographical map of the face and NumPy to calculate the exact distances and ratios between specific facial landmarks.
-## Features
- * **3D Facial Landmarking:** Utilizes MediaPipe Face Mesh to extract 478 precise (X, Y, Z) coordinates from a single 2D image.
- * **Accurate Distance Calculation:** Uses 3D Euclidean distance math via NumPy to ensure that slight head tilts or angles do not distort the morphological measurements.
- * **Scientific Ratio Analysis:** Computes facial ratios (e.g., facial thirds, golden ratio, eye-to-mouth distances) to compare against established scientific literature on facial aesthetics.
-## Requirements
-The project requires Python 3 and the following libraries:
- * mediapipe (for facial landmark extraction)
- * opencv-python (for image loading and processing)
- * numpy (for high-performance 3D vector math and distance calculations)
-## Installation
-Install the required dependencies using pip:
-```bash
-pip install mediapipe opencv-python numpy
+# Odin — Facial Geometry & Attractiveness-Modeling Study
+
+A personal project exploring **facial geometry** — the proportions and ratios cited
+in facial-aesthetics literature — and, as a modeling exercise, **how well (and how
+poorly) those features predict the subjective attractiveness ratings of a specific
+research dataset**. It extracts 478 facial landmarks with MediaPipe, computes ~25
+classical ratios plus colour/texture and Procrustes shape features, and trains
+gradient-boosted models on the SCUT-FBP5500 dataset.
+
+> ⚠️ **This is not a tool for measuring human attractiveness.**
+> The output is **NOT** a meaningful, objective, or authoritative judgment of
+> anyone's appearance, and should NOT be treated as one. The "score" only
+> reflects the **averaged opinions of the ~60 raters** who labelled the
+> SCUT-FBP5500 dataset (predominantly East-Asian faces) — it is one narrow,
+> culturally specific snapshot of taste, not a standard. I built this out of
+> genuine interest in facial geometry and to map, for myself, *what actually
+> drives a "beauty" rating and what doesn't*. **Please don't base your
+> self-image on anything here.**
+
+## What this project is really about
+
+The interesting question was never "what's the score" — it was: *can hand-crafted
+geometric ratios explain attractiveness ratings at all, and where do they hit a
+wall?* Treating it as an honest ML investigation produced clearer findings than the
+predictor itself:
+
+- **Geometry explains ~60% of the rating variance and no more.** Cross-validated
+  R² parks around **0.61–0.63**; the rest is skin/texture/gestalt that landmark
+  geometry simply cannot see. Bigger models and hyperparameter tuning don't move
+  it — the ceiling is the *features*, not the model.
+- **"Attractiveness" doesn't transfer across rater populations for male faces.**
+  A model trained on SCUT ranks held-out SCUT males well (Spearman ≈ 0.76) but
+  ranks a different population's male faces (CFD) at **≈ 0.04 — essentially
+  random.** For female faces it transfers moderately (≈ 0.35). In other words,
+  *male* "attractiveness" as labelled here is highly population-specific.
+- **Model choice matters in a teachable way.** A RandomForest, being a
+  leaf-averaging model, regresses the tails toward the crowd mean (it literally
+  can't rate an 8/10 face as an 8) — so it was dropped in favour of **XGBoost**,
+  whose boosting follows the full curve.
+- **Holistic shape helps a little.** Procrustes *averageness* + shape-PCA features
+  add a small but consistent **+0.02 R²** over the isolated ratios.
+
+I think the limitations are the most valuable part — they're documented here on
+purpose.
+
+## How it works
 
 ```
-## Usage
- 1. Place the target facial photograph (e.g., photo.jpg) in the project directory.
- 2. Update the image_path variable in the script to match your file's name.
- 3. Run the script.
-The script will:
- 1. Load the image and convert it to the RGB color space.
- 2. Pass the image through the MediaPipe Face Mesh model.
- 3. Extract the 478 facial landmarks into a structured (478, 3) NumPy array.
- 4. Calculate 3D Euclidean distances between specific topology indices to compute the final ratios.
-## Finding Landmark Indices
-MediaPipe does not assign string names to the landmarks. To calculate specific ratios, you must reference an official **MediaPipe Face Mesh Topology Map** to find the exact index numbers (0-477) for the required facial points (e.g., the tip of the nose is index 1).
+photo ──► MediaPipe FaceLandmarker (478 landmarks)
+      ──► geometric ratios   (thirds, fifths, golden, FWHR, jaw, EAR, …)
+      ──► appearance         (skin texture, lip/eye/skin colour, CIELab contrasts)
+      ──► Procrustes shape   (averageness + 15 shape-PCA components)
+      ──► XGBoost regressor  ──► 1–10 score (+ optional male presentation boost)
+```
+
+Geometric ratios are scale-invariant; the colour/texture and shape features use
+pixel-space landmarks. Models are trained per sex and bundled with their feature
+order and shape basis so inference reproduces the exact feature vector.
+
+## Project structure
+
+```
+Odin/                      # inference pipeline: image → features → score
+├── main.py                #   orchestration, build_features(), male_boost()
+└── Face_analysis/
+    ├── landmarks.py       #   MediaPipe Tasks landmark extraction
+    ├── face_data.py       #   478 raw points → named semantic points
+    ├── constants.py       #   config, feature/boost constants
+    ├── utils.py           #   angle helpers
+    └── Ratios/
+        ├── calculate_ratios.py   # the classical geometric ratios
+        ├── appearance.py         # colour / texture / CIELab contrast
+        ├── regions.py            # sampling polygons (lips/eyes/cheeks/forehead)
+        └── shape.py              # Procrustes alignment + shape features
+odin_ui/                   # web UI (upload a photo → landmarks overlay + ratios + score)
+├── backend/  app.py       #   FastAPI wrapper around the exact Odin pipeline
+└── frontend/              #   Vite + React + TypeScript
+odin_model/                # training side (datasets NOT included — see below)
+├── data_scut.py           #   SCUT feature extraction → CSV cache
+├── extract_landmarks.py   #   one-time raw-landmark cache (for shape features)
+├── shape_utils.py         #   GPA + shape-PCA fitting
+├── train.py               #   XGBoost training, CV, bundle export
+└── overlay.py             #   debug region overlays
+models/                    # trained artifacts
+├── model_male.joblib      #   XGBoost bundle (male)
+├── model_female.joblib    #   XGBoost bundle (female)
+└── face_landmarker.task   #   MediaPipe model (download separately, see below)
+```
+
+## Requirements
+
+- **Python 3.10+**
+- Inference: `mediapipe`, `opencv-python`, `numpy`, `pandas`, `scikit-learn`,
+  `xgboost`, `scipy`, `joblib`
+- Web UI backend: `fastapi`, `uvicorn`, `python-multipart`
+- Web UI frontend: **Node.js + npm**
+- Training (`odin_model`): the above + `matplotlib`, `seaborn`, `tqdm`, `openpyxl`
+
+## Installation & usage
+
+```bash
+pip install -r requirements.txt
+```
+
+Download the MediaPipe face landmarker model into `models/`:
+<https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task>
+
+**CLI** — set `IMAGEPATH` and `SEX` in `Odin/Face_analysis/constants.py`, then:
+```bash
+python -m Odin.main
+# → Attractiveness (MALE): 7.64 / 10
+```
+
+**Web UI** — run the two pieces:
+```bash
+# backend (uses the same env as the CLI)
+cd odin_ui/backend && pip install -r requirements.txt
+uvicorn app:app --reload --port 8000
+
+# frontend (new terminal)
+cd odin_ui/frontend && npm install && npm run dev   # open http://localhost:5173
+```
+Upload a face photo → it returns the photo with the landmark overlay, the
+calculated ratios (hover a ratio to highlight the landmarks it uses, with the
+male/female ideal beside it), and the model score.
+
+**Training** (optional, requires the SCUT dataset placed under `odin_model/scut/`):
+```bash
+cd odin_model
+python extract_landmarks.py   # one-time landmark cache
+python train.py               # → 56-feature bundles in odin_model/models/
+```
+
+## Data & ethics
+
+The SCUT-FBP5500 dataset (and CFD, used briefly during the population-transfer
+analysis) are **not included** in this repository — they are photographs of real
+people under their own academic-use terms, and redistributing them would be a
+licensing and privacy violation. Only code is published; obtain the datasets from
+their original sources if you want to retrain. The ratings are subjective human
+judgments from a specific, non-representative rater pool — see the disclaimer.
+
+## Dataset citations
+
+These datasets require citation. If you retrain or build on this work, cite their
+original authors.
+
+**SCUT-FBP5500** — primary training data:
+
+> Liang, L., Lin, L., Jin, L., Xie, D., & Li, M. (2018). SCUT-FBP5500: A Diverse
+> Benchmark Dataset for Multi-Paradigm Facial Beauty Prediction. *2018 24th
+> International Conference on Pattern Recognition (ICPR)*, 1598–1603.
+> https://doi.org/10.1109/ICPR.2018.8546038
+
+```bibtex
+@inproceedings{liang2018scutfbp5500,
+  title        = {{SCUT-FBP5500}: A Diverse Benchmark Dataset for Multi-Paradigm Facial Beauty Prediction},
+  author       = {Liang, Lingyu and Lin, Luojun and Jin, Lianwen and Xie, Duorui and Li, Mengru},
+  booktitle    = {2018 24th International Conference on Pattern Recognition (ICPR)},
+  pages        = {1598--1603},
+  year         = {2018},
+  organization = {IEEE},
+  doi          = {10.1109/ICPR.2018.8546038}
+}
+```
+
+**Chicago Face Database (CFD)** — used only for the cross-population transfer
+analysis (not shipped, not part of the trained models). Per the CFD usage terms,
+cite the set(s) used:
+
+> CFD: Ma, D. S., Correll, J., & Wittenbrink, B. (2015). The Chicago Face Database:
+> A Free Stimulus Set of Faces and Norming Data. *Behavior Research Methods, 47*,
+> 1122–1135. https://doi.org/10.3758/s13428-014-0532-5
+>
+> CFD-INDIA: Lakshmi, A., Wittenbrink, B., Correll, J., & Ma, D. S. (2021). The
+> India Face Set: International and Cultural Boundaries Impact Face Impressions and
+> Perceptions of Category Membership. *Frontiers in Psychology, 12*, 627678.
+> https://doi.org/10.3389/fpsyg.2021.627678
+>
+> CFD-MR (if you use the multiracial expansion): Ma, D. S., Kantner, J., &
+> Wittenbrink, B. (2021). Chicago Face Database: Multiracial Expansion. *Behavior
+> Research Methods, 53*, 1289–1300. https://doi.org/10.3758/s13428-020-01482-5
+
+## Model performance
+
+Trained on **SCUT-FBP5500** (2,750 faces per sex), 56 features, scored with
+**5-fold cross-validation** (held-out, not training-fit):
+
+| Model | MAE | RMSE | R² |
+|-------|-----|------|-----|
+| Female | 0.752 | 0.973 | 0.633 |
+| Male (raw XGBoost) | 0.676 | 0.910 | 0.613 |
+
+The labels are on a 1–10 scale (rescaled from SCUT's 1–5). For context, divide MAE
+by 2.25 to compare with the deep-CNN SCUT literature (≈ 0.22 MAE on 1–5): these
+hand-crafted-feature models sit at the top of the *classical/interpretable* range,
+below end-to-end CNNs — expected, since they use ~25 ratios instead of raw pixels.
+
+A male-only **presentation boost** can stretch above-mean scores toward a more
+intuitive scale; it intentionally trades fit against SCUT's own raters, so it is a
+display choice, not an accuracy improvement.
 
 ## Importing the model into another project
-The `.joblib` model file is **not** self-contained: a prediction is only valid if
-the 40 input features are computed by this exact pipeline (same landmarks, same
-pixel scaling, same ratio definitions, same column order). So you must bring the
-feature-extraction code along with the model, not just the bundle.
 
-**Files to copy** (preserve the folder layout — paths are resolved relative to the
-project root, i.e. the folder that contains the `Odin/` package):
+The `.joblib` bundle is **not** self-contained: a prediction is only valid if the
+56 input features are produced by this exact pipeline (same landmarks, pixel
+scaling, ratio definitions, shape basis, and column order). Copy the feature code
+with the model — `Odin/` (the whole package) + `models/` — not just the bundle.
 
-```
-Odin/                                   # the feature-extraction package
-├── __init__.py
-├── main.py                             # build_features() + male_boost() helpers
-└── Face_analysis/
-    ├── __init__.py
-    ├── constants.py                    # feature keys + male-boost constants
-    ├── landmarks.py
-    ├── face_data.py
-    ├── utils.py
-    └── Ratios/
-        ├── __init__.py
-        ├── calculate_ratios.py
-        ├── appearance.py
-        └── regions.py
-models/
-├── model_male.joblib                   # XGBoost bundle (male)
-├── model_female.joblib                 # XGBoost bundle (female)
-└── face_landmarker.task                # MediaPipe Tasks model (download separately)
-```
-
-**Python dependencies:** `mediapipe`, `opencv-python`, `numpy`, `pandas`, `joblib`,
-`xgboost`, `scikit-learn` (xgboost's sklearn wrapper needs it to load).
-
-**Each bundle is a dict:** `xgboost` (the regressor), `feature_names` (the required
-column order), `label` (`"MALE"`/`"FEMALE"`), `target`, `n_samples`, and the male
-calibration stats `xgb_pred_mean` / `xgb_pred_max`.
+**Each bundle is a dict:** `xgboost`, `feature_names` (required column order),
+`label`, `target`, `n_samples`, male calibration stats `xgb_pred_mean` /
+`xgb_pred_max`, and the shape model `shape_ref_mean` / `shape_pca`.
 
 **Minimal usage** (from the project root):
 ```python
@@ -70,33 +217,25 @@ import joblib, pandas as pd
 from Odin.Face_analysis.landmarks import calculate_landmarks_array
 from Odin.Face_analysis.face_data import extract_face_data
 from Odin.Face_analysis.Ratios.appearance import appearance_features
-from Odin.main import build_features, male_boost
+from Odin.main import build_features, add_shape_features, male_boost
 
 landmarks, img = calculate_landmarks_array("photo.jpg")
 h, w = img.shape[:2]
 px = landmarks.copy(); px[:, 0] *= w; px[:, 1] *= h; px[:, 2] *= w  # pixel space
-features = build_features(extract_face_data(px), appearance_features(img, px))
 
 model = joblib.load("models/model_male.joblib")
+features = build_features(extract_face_data(px), appearance_features(img, px))
+add_shape_features(features, px, model)               # adds the Procrustes features
 X = pd.DataFrame([features], columns=model["feature_names"])
+
 score = float(model["xgboost"].predict(X)[0])
-if model["label"] == "MALE":          # male-only presentation boost
+if model["label"] == "MALE":                          # male-only presentation boost
     score = male_boost(score, model)
 print(round(score, 2))
 ```
 
-## Model performance
-Trained on **SCUT-FBP5500** (2,750 faces per sex, attractiveness rescaled to 1-10).
-Metrics below are **5-fold cross-validated** (held-out, not training-fit):
+## License
 
-| Model | MAE | MSE | RMSE | R² |
-|-------|-----|-----|------|-----|
-| Female | 0.774 | 1.004 | 1.002 | 0.611 |
-| Male (raw XGBoost) | 0.695 | 0.873 | 0.934 | 0.591 |
-| Male (with deployed boost) | 0.859 | 1.452 | 1.205 | 0.320 |
-
-The male **boost** is a presentation-layer transform that stretches strong faces
-upward toward a Western/FaceIQ-style scale. It deliberately trades fit against
-SCUT's own raters (hence the higher MAE/RMSE and lower R² in the last row) for a
-more intuitive score on out-of-distribution photos. The raw male row reflects the
-model's true predictive accuracy on its training distribution.
+See `LICENSE`. Note that a licence governs reuse of this **code**; the underlying
+ratios are drawn from public facial-aesthetics literature and are not themselves
+owned by this project.
