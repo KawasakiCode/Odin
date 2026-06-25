@@ -1,6 +1,12 @@
 /venv
-/models
+/models/face_landmarker.task
 __pycache__/
 image.jpg
 tests.txt
-/odin_model
+/odin_training/scut
+/odin_training/venv
+/odin_training/landmarks_scut.npz
+/odin_training/training_data_scut.csv
+/odin_training/.claude
+/odin_training/debug_overlays
+/odin_training/models

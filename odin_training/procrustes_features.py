@@ -1,0 +1,124 @@
+"""
+Procrustes/shape features experiment.
+
+Adds two kinds of holistic geometry features the 40 hand-crafted ratios miss:
+  - averageness: Procrustes distance of a face's shape to the consensus (mean)
+    shape — a classic, strong attractiveness predictor.
+  - shape-PCA: top-K principal components of the Procrustes-aligned landmark
+    configuration — the "gestalt of geometry" (how everything sits together).
+
+Reports honest 5-fold CV R²/MAE for XGB on the 40 ratios vs 40 + shape features.
+The mean shape (for averageness) and the PCA basis are fit on each fold's TRAIN
+split only, so the comparison isn't leaky.
+"""
+import numpy as np
+import pandas as pd
+import joblib
+from scipy.linalg import orthogonal_procrustes
+from sklearn.decomposition import PCA
+from sklearn.model_selection import KFold, train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import xgboost as xgb
+
+N_PCA = 15
+RS = 42
+
+
+def center_scale(X):
+    """Center each config at its centroid and scale to unit centroid size."""
+    X = X - X.mean(axis=1, keepdims=True)
+    size = np.sqrt((X ** 2).sum(axis=(1, 2), keepdims=True))
+    return X / size
+
+
+def gpa(X, iters=4):
+    """Generalized Procrustes alignment. X: (n, p, 2) -> aligned (n, p, 2)."""
+    Xc = center_scale(X.astype(np.float64))
+    mean = Xc[0].copy()
+    for _ in range(iters):
+        for i in range(len(Xc)):
+            R, _ = orthogonal_procrustes(Xc[i], mean)
+            Xc[i] = Xc[i] @ R
+        mean = Xc.mean(axis=0)
+        mean /= np.sqrt((mean ** 2).sum())
+    return Xc  # aligned configs (rotations to a stable consensus)
+
+
+def xgb_oof(X, y):
+    """5-fold OOF predictions with early stopping (matches train.py)."""
+    oof = np.zeros(len(y))
+    for tr, te in KFold(5, shuffle=True, random_state=RS).split(X):
+        Xtr, ytr = X[tr], y[tr]
+        Xt, Xv, yt, yv = train_test_split(Xtr, ytr, test_size=0.2, random_state=RS)
+        m = xgb.XGBRegressor(n_estimators=1000, learning_rate=0.05, max_depth=4,
+                             subsample=0.8, colsample_bytree=0.7, reg_lambda=2,
+                             early_stopping_rounds=50, random_state=RS)
+        m.fit(Xt, yt, eval_set=[(Xv, yv)], verbose=False)
+        oof[te] = m.predict(X[te])
+    return oof
+
+
+def shape_oof(aligned_flat, y):
+    """Like xgb_oof but the shape features (averageness + PCA) are fit per-fold."""
+    oof = np.zeros(len(y))
+    # placeholder; combined with ratios in main()
+    return oof
+
+
+def main():
+    npz = np.load("landmarks_scut.npz", allow_pickle=True)
+    lm_ids = list(npz["ids"])
+    lm = npz["landmarks"]  # (N, 478, 2)
+    id2lm = {i: lm[k] for k, i in enumerate(lm_ids)}
+
+    df = pd.read_csv("training_data_scut.csv")
+    df = df[df["Image_ID"].isin(id2lm)].reset_index(drop=True)
+    df["sex"] = df["Image_ID"].str[1]
+    fn = joblib.load("models/model_male.joblib")["feature_names"]
+
+    for sex, name in [("F", "FEMALE"), ("M", "MALE")]:
+        sub = df[df["sex"] == sex].reset_index(drop=True)
+        y = sub["Attractiveness"].values
+        Xratio = sub[fn].fillna(sub[fn].mean()).values
+
+        # GPA align this sex's faces once (pose normalisation, label-free).
+        raw = np.stack([id2lm[i] for i in sub["Image_ID"]])
+        aligned = gpa(raw).reshape(len(sub), -1)  # (n, 956)
+
+        # Baseline: ratios only.
+        base = xgb_oof(Xratio, y)
+
+        # Augmented: ratios + averageness + shape-PCA, fit per fold.
+        oof = np.zeros(len(y))
+        for tr, te in KFold(5, shuffle=True, random_state=RS).split(Xratio):
+            mean_tr = aligned[tr].mean(axis=0)
+            pca = PCA(n_components=N_PCA, random_state=RS).fit(aligned[tr])
+
+            def feats(idx):
+                avg = np.linalg.norm(aligned[idx] - mean_tr, axis=1, keepdims=True)
+                pcs = pca.transform(aligned[idx])
+                return np.hstack([Xratio[idx], avg, pcs])
+
+            Xtr_aug, Xte_aug = feats(tr), feats(te)
+            ytr = y[tr]
+            Xt, Xv, yt, yv = train_test_split(Xtr_aug, ytr, test_size=0.2, random_state=RS)
+            m = xgb.XGBRegressor(n_estimators=1000, learning_rate=0.05, max_depth=4,
+                                 subsample=0.8, colsample_bytree=0.7, reg_lambda=2,
+                                 early_stopping_rounds=50, random_state=RS)
+            m.fit(Xt, yt, eval_set=[(Xv, yv)], verbose=False)
+            oof[te] = m.predict(Xte_aug)
+
+        def rep(p):
+            return (r2_score(y, p), mean_absolute_error(y, p),
+                    mean_squared_error(y, p) ** 0.5)
+
+        r2b, maeb, rmseb = rep(base)
+        r2a, maea, rmsea = rep(oof)
+        print(f"\n=== {name} (n={len(sub)}) ===")
+        print(f"  ratios only      : R2={r2b:.3f}  MAE={maeb:.3f}  RMSE={rmseb:.3f}")
+        print(f"  + shape features : R2={r2a:.3f}  MAE={maea:.3f}  RMSE={rmsea:.3f}")
+        print(f"  delta            : R2 {r2a - r2b:+.3f}  MAE {maea - maeb:+.3f}")
+
+
+if __name__ == "__main__":
+    main()
