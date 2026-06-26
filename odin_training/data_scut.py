@@ -37,7 +37,7 @@ RATINGS_XLSX = str(BASE / "scut" / "All_Ratings.xlsx")
 RATINGS_CSV  = str(BASE / "scut" / "scut_ratings.csv")
 IMAGES_DIR   = str(BASE / "scut" / "Images")
 CACHE_CSV    = str(BASE / "training_data_scut.csv")
-TASK_MODEL   = str(BASE / "face_landmarker.task")
+TASK_MODEL   = str(BASE.parent / "models" / "face_landmarker.task")
 
 
 def build_scut_ratings(xlsx_path=RATINGS_XLSX, out_csv=RATINGS_CSV):
