@@ -17,7 +17,7 @@ from tqdm import tqdm
 BASE = Path(__file__).resolve().parent
 IMAGES_DIR = BASE / "scut" / "Images"
 OUT = str(BASE / "landmarks_scut.npz")
-TASK_MODEL = str(BASE / "face_landmarker.task")
+TASK_MODEL = str(BASE.parent / "models" / "face_landmarker.task")
 
 
 def main():

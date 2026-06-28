@@ -21,7 +21,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import xgboost as xgb
 
 N_PCA = 15
-RS = 42
+RS = [42, 45, 33, 12, 63, 67, 83, 23, 98, 10]
 
 
 def center_scale(X):
@@ -44,28 +44,21 @@ def gpa(X, iters=4):
     return Xc  # aligned configs (rotations to a stable consensus)
 
 
-def xgb_oof(X, y):
+def xgb_oof(X, y, rs):
     """5-fold OOF predictions with early stopping (matches train.py)."""
     oof = np.zeros(len(y))
-    for tr, te in KFold(5, shuffle=True, random_state=RS).split(X):
+    for tr, te in KFold(5, shuffle=True, random_state=rs).split(X):
         Xtr, ytr = X[tr], y[tr]
-        Xt, Xv, yt, yv = train_test_split(Xtr, ytr, test_size=0.2, random_state=RS)
-        m = xgb.XGBRegressor(n_estimators=1000, learning_rate=0.05, max_depth=4,
+        Xt, Xv, yt, yv = train_test_split(Xtr, ytr, test_size=0.2, random_state=rs)
+        m = xgb.XGBRegressor(n_estimators= 1000, learning_rate=0.05, max_depth=4,
                              subsample=0.8, colsample_bytree=0.7, reg_lambda=2,
-                             early_stopping_rounds=50, random_state=RS)
+                             early_stopping_rounds=50, random_state = rs)
         m.fit(Xt, yt, eval_set=[(Xv, yv)], verbose=False)
         oof[te] = m.predict(X[te])
     return oof
 
 
-def shape_oof(aligned_flat, y):
-    """Like xgb_oof but the shape features (averageness + PCA) are fit per-fold."""
-    oof = np.zeros(len(y))
-    # placeholder; combined with ratios in main()
-    return oof
-
-
-def main():
+def main(rs):
     npz = np.load("landmarks_scut.npz", allow_pickle=True)
     lm_ids = list(npz["ids"])
     lm = npz["landmarks"]  # (N, 478, 2)
@@ -76,6 +69,8 @@ def main():
     df["sex"] = df["Image_ID"].str[1]
     fn = joblib.load("models/model_male.joblib")["feature_names"]
 
+    male_stats = []
+    female_stats = []
     for sex, name in [("F", "FEMALE"), ("M", "MALE")]:
         sub = df[df["sex"] == sex].reset_index(drop=True)
         y = sub["Attractiveness"].values
@@ -86,13 +81,13 @@ def main():
         aligned = gpa(raw).reshape(len(sub), -1)  # (n, 956)
 
         # Baseline: ratios only.
-        base = xgb_oof(Xratio, y)
+        base = xgb_oof(Xratio, y, rs)
 
         # Augmented: ratios + averageness + shape-PCA, fit per fold.
         oof = np.zeros(len(y))
-        for tr, te in KFold(5, shuffle=True, random_state=RS).split(Xratio):
+        for tr, te in KFold(5, shuffle=True, random_state=rs).split(Xratio):
             mean_tr = aligned[tr].mean(axis=0)
-            pca = PCA(n_components=N_PCA, random_state=RS).fit(aligned[tr])
+            pca = PCA(n_components=N_PCA, random_state=rs).fit(aligned[tr])
 
             def feats(idx):
                 avg = np.linalg.norm(aligned[idx] - mean_tr, axis=1, keepdims=True)
@@ -101,10 +96,10 @@ def main():
 
             Xtr_aug, Xte_aug = feats(tr), feats(te)
             ytr = y[tr]
-            Xt, Xv, yt, yv = train_test_split(Xtr_aug, ytr, test_size=0.2, random_state=RS)
+            Xt, Xv, yt, yv = train_test_split(Xtr_aug, ytr, test_size=0.2, random_state=rs)
             m = xgb.XGBRegressor(n_estimators=1000, learning_rate=0.05, max_depth=4,
                                  subsample=0.8, colsample_bytree=0.7, reg_lambda=2,
-                                 early_stopping_rounds=50, random_state=RS)
+                                 early_stopping_rounds=50, random_state=rs)
             m.fit(Xt, yt, eval_set=[(Xv, yv)], verbose=False)
             oof[te] = m.predict(Xte_aug)
 
@@ -118,7 +113,59 @@ def main():
         print(f"  ratios only      : R2={r2b:.3f}  MAE={maeb:.3f}  RMSE={rmseb:.3f}")
         print(f"  + shape features : R2={r2a:.3f}  MAE={maea:.3f}  RMSE={rmsea:.3f}")
         print(f"  delta            : R2 {r2a - r2b:+.3f}  MAE {maea - maeb:+.3f}")
+        if sex == "M":
+            male_stats.extend((r2b, maeb, rmseb, r2a, maea, rmsea))
+        else: 
+            female_stats.extend((r2b, maeb, rmseb, r2a, maea, rmsea))
+    return male_stats, female_stats
 
 
 if __name__ == "__main__":
-    main()
+    msr2b = 0 
+    msmaeb = 0
+    msrmseb = 0
+    msr2a = 0
+    msmaea = 0
+    msrmsea = 0
+    fsr2b = 0 
+    fsmaeb = 0
+    fsrmseb = 0
+    fsr2a = 0
+    fsmaea = 0
+    fsrmsea = 0
+    mdr_s = []
+    fdr_s = []
+    male_stats = []
+    female_stats = []
+    for rs in RS:
+        male_stats, female_stats = main(rs)
+        msr2b += male_stats[0]
+        msmaeb += male_stats[1]
+        msrmseb += male_stats[2]
+        msr2a += male_stats[3]
+        msmaea += male_stats[4]
+        msrmsea += male_stats[5]
+        mdr_s.append(male_stats[0] - male_stats[3])
+
+        fsr2b += female_stats[0]
+        fsmaeb += female_stats[1]
+        fsrmseb += female_stats[2]
+        fsr2a += female_stats[3]
+        fsmaea += female_stats[4]
+        fsrmsea += female_stats[5]
+        fdr_s.append(female_stats[0] - female_stats[3])
+    
+    mstd = np.std(mdr_s, ddof=1) # used ddof = 1 because 10 seeds are NOT the entire population of seeds
+    fstd = np.std(fdr_s, ddof=1)
+
+    print("MALE")
+    print(f"  ratios only      : R2={msr2b/len(RS):.3f}   MAE={msmaeb/len(RS):.3f}  RMSE={msrmseb/len(RS):.3f}")
+    print(f"  + shape features : R2={msr2a/len(RS):.3f}  MAE={msmaea/len(RS):.3f}  RMSE={msrmsea/len(RS):.3f}")
+    print(f"  delta            : R2 {msr2a/len(RS) - msr2b/len(RS):+.3f}± {mstd:.3f} MAE {msmaea/len(RS) - msmaeb/len(RS):+.3f}")
+
+    print("FEMALE")
+    print(f"  ratios only      : R2={fsr2b/len(RS):.3f}   MAE={fsmaeb/len(RS):.3f}  RMSE={fsrmseb/len(RS):.3f}")
+    print(f"  + shape features : R2={fsr2a/len(RS):.3f}  MAE={fsmaea/len(RS):.3f}  RMSE={fsrmsea/len(RS):.3f}")
+    print(f"  delta            : R2 {fsr2a/len(RS) - fsr2b/len(RS):+.3f}± {fstd:.3f} MAE {fsmaea/len(RS) - fsmaeb/len(RS):+.3f}")
+
+    
