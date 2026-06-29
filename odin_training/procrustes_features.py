@@ -67,7 +67,7 @@ def main(rs):
     df = pd.read_csv("training_data_scut.csv")
     df = df[df["Image_ID"].isin(id2lm)].reset_index(drop=True)
     df["sex"] = df["Image_ID"].str[1]
-    fn = joblib.load("models/model_male.joblib")["feature_names"]
+    fn = [c for c in df.columns if c not in ("Image_ID", "Attractiveness", "sex")]
 
     male_stats = []
     female_stats = []
