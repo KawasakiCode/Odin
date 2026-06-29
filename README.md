@@ -38,7 +38,13 @@ predictor itself:
   can't rate an 8/10 face as an 8) — so it was dropped in favour of **XGBoost**,
   whose boosting follows the full curve.
 - **Holistic shape helps a little.** Procrustes *averageness* + shape-PCA features
-  add a small but consistent **+0.02 R²** over the isolated ratios.
+  add a small but consistent **+0.013 ± 0.005 R²** (averaged over 10 random seeds,
+  per sex) over the isolated ratios — modest, but the sign never flips across seeds,
+  so it's signal rather than noise.
+- **Interpretable geometry leaves ~0.14 R² on the table vs. a deep embedding.** A
+  frozen FaceNet-512 embedding + Ridge reaches ~0.75 R², and the deep-CNN benchmark
+  ~0.81 (see *How far this is from the ceiling* below). The hand-crafted model trades
+  that accuracy for explanations you can actually read.
 
 I think the limitations are the most valuable part — they're documented here on
 purpose.
@@ -199,6 +205,39 @@ below end-to-end CNNs — expected, since they use ~25 ratios instead of raw pix
 A male-only **presentation boost** can stretch above-mean scores toward a more
 intuitive scale; it intentionally trades fit against SCUT's own raters, so it is a
 display choice, not an accuracy improvement.
+
+## How far this is from the ceiling
+
+To see how much attractiveness signal is even *recoverable* from a face image — and
+how much of it the interpretable features capture — I compared three approaches
+under the **same 5-fold CV protocol** (1–10 scale):
+
+| Approach | Male R² | Female R² | What it captures |
+|----------|---------|-----------|------------------|
+| Hand-crafted features (this project) | 0.613 | 0.633 | interpretable geometry + colour + shape |
+| Frozen FaceNet-512 embedding + Ridge | 0.749 | 0.759 | signal in a face-recognition embedding |
+| End-to-end CNN (SCUT-FBP5500 benchmark) | ≈ 0.81 | ≈ 0.81 | the full-image ceiling |
+
+The CNN figure is the official **SCUT-FBP5500 benchmark** (Liang et al., 2018; see
+*Dataset citations*): its best model, **ResNeXt-50**, reports a **Pearson
+correlation ≈ 0.90** (so ≈ 0.81 R²) with **MAE ≈ 0.21** on the 1–5 scale under
+5-fold CV. That benchmark trains on all 5,500 faces **pooled** (not per sex), so
+treat ≈ 0.81 as a rough ceiling reference, not a like-for-like number.
+
+How to read it:
+
+- A **frozen identity embedding** — no fine-tuning at all — already recovers
+  ~**0.75 R²**, about **94% of the deep-CNN ceiling**. Most of the extractable
+  signal lives in a generic face representation, not in attractiveness-specific
+  training.
+- The **interpretable features leave ~0.13–0.14 R²** relative to that embedding.
+  That gap is the cost of interpretability: part is signal that *could* be
+  hand-crafted (skin quality/texture, hair, eyebrows), part is holistic "gestalt"
+  geometry and photographic confounds that don't reduce to nameable features. So the
+  realistic *explainable* ceiling sits **between 0.61 and 0.75**, not at 0.75.
+- The **male gap is slightly larger than the female gap**, and the embedding nearly
+  erases the male/female difference (0.749 vs 0.759) that geometry alone could not —
+  evidence that male attractiveness leans more on signal geometry cannot see.
 
 ## Importing the model into another project
 

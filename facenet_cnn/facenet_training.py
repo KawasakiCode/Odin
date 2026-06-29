@@ -2,6 +2,10 @@ from pathlib import Path
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
+from sklearn.linear_model import RidgeCV
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import cross_validate, KFold
 
 BASE = Path(__file__).resolve().parent
 CSV = str(BASE.parent / "odin_training" / "training_data_scut.csv")
@@ -21,3 +25,21 @@ for id, embeddings in zip(npz["ids"], npz["landmarks"]):
     else: 
         X_male.append(embeddings)
         y_male.append(scores[id])
+
+def Ridge(X, y, sex):
+    model = make_pipeline(  
+        StandardScaler(),
+        RidgeCV(alphas=np.logspace(-3, 3, 13)) # tries alpha = 0.001 ... 1000
+    )
+
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+    scoring = ["r2", "neg_mean_absolute_error", "neg_root_mean_squared_error"]
+    res = cross_validate(model, X, y, cv=kf, scoring=scoring)
+
+    print(sex)
+    print(f"R2  : {res['test_r2'].mean():.3f} ± {res['test_r2'].std():.3f}")
+    print(f"MAE : {-res['test_neg_mean_absolute_error'].mean():.3f}")
+    print(f"RMSE: {-res['test_neg_root_mean_squared_error'].mean():.3f}")
+
+Ridge(X_male, y_male, "Male")
+Ridge(X_female, y_female, "Female")
