@@ -10,3 +10,5 @@ tests.txt
 /odin_training/.claude
 /odin_training/debug_overlays
 /odin_training/models
+/facenet_cnn/venv
+/facenet_cnn/embeddings_scut.npz
