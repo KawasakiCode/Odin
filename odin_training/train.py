@@ -102,7 +102,7 @@ def export_model(label, X, y, n_estimators, shape_model):
     the Procrustes shape model (consensus mean + PCA) are bundled with the model
     so inference reproduces the exact feature vector.
     """
-    MODEL_DIR = BASE / "models"
+    MODEL_DIR = BASE.parent / "models"
     MODEL_DIR.mkdir(exist_ok=True)
     slug = label.lower().replace(" ", "_")
     ref_mean, pca = shape_model
