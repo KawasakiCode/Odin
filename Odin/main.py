@@ -26,7 +26,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import joblib
 import pandas as pd
+import numpy as np
 
+from Odin.Face_analysis.trichion import calculate_detection_window, calculate_trichion
 from Odin.Face_analysis.landmarks import calculate_landmarks_array
 from Odin.Face_analysis.face_data import extract_face_data
 from Odin.Face_analysis.constants import (
@@ -143,6 +145,33 @@ def main():
     face_data = extract_face_data(pixel_landmarks)
     appearance = appearance_features(image_bgr, pixel_landmarks)
 
+    direction = (face_data["top_center_forehead"][0] - face_data["glabella"][0], 
+                 face_data["top_center_forehead"][1] - face_data["glabella"][1])
+    d = np.array(direction, dtype=float)
+    d = d / np.linalg.norm(d)
+
+    # MediaPipe trichion
+    start_x = face_data["top_center_forehead"][0]
+    start_y = face_data["top_center_forehead"][1]
+
+    start = np.array([start_x, start_y])
+
+    # Safe skin patch 40% distance between glabella and MediaPipe trichion
+    pos_x = face_data["glabella"][0] + 0.4*(face_data["top_center_forehead"][0] - face_data["glabella"][0])
+    pos_y = face_data["glabella"][1] + 0.4*(face_data["top_center_forehead"][1] - face_data["glabella"][1])
+
+    pos = np.array([pos_x, pos_y])
+
+    detection_window = abs(face_data["left_zygomatic"][0] - face_data["right_zygomatic"][0]) * 0.03
+    patch = calculate_detection_window(detection_window, pos, image_bgr)
+
+    forehead_span = np.linalg.norm(face_data["top_center_forehead"] - face_data["glabella"])
+    max_dist = 1.5 * forehead_span
+
+    trichion = calculate_trichion(d, start, image_bgr, detection_window, patch, max_dist)
+    if trichion is not None:
+        face_data["top_center_forehead"] = np.array([trichion[0], trichion[1], face_data["top_center_forehead"][2]]) 
+
     features = build_features(face_data, appearance)
 
     model = joblib.load(MODEL_PATHS[SEX])
@@ -163,3 +192,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -5,7 +5,7 @@ def extract_face_data(landmarks):
     # vector upward so the estimate scales with face size and follows head
     # tilt (a fixed pixel offset does neither). TRICHION_K is tuned visually
     # against the debug overlays.
-    TRICHION_K = 0.45
+    TRICHION_K = 0.0
     forehead_top = landmarks[10]
     glabella = (landmarks[8] + landmarks[9]) / 2
     trichion = forehead_top + TRICHION_K * (forehead_top - glabella)
