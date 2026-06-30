@@ -8,12 +8,18 @@ SCUT-FBP5500 data loader.
   - Filenames encode race+sex: AF/AM = Asian, CF/CM = Caucasian, second letter
     is sex. e.g. "AF123.jpg" -> race group "AF".
 """
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import numpy as np
 import pandas as pd
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from pathlib import Path
+
 from tqdm import tqdm
 import cv2
 
@@ -28,6 +34,7 @@ from Odin.Face_analysis.Ratios.calculate_ratios import (
     symmetry_score, width_ratio_46,
 )
 # Reuse the overlay helper so SCUT extraction also dumps debug overlays.
+from Odin.Face_analysis.trichion import calculate_detection_window, calculate_trichion
 from overlay import save_landmark_overlay, DEBUG_OVERLAY_DIR
 
 # Anchor data paths to this file's folder so the script works from any working
@@ -92,7 +99,36 @@ def process_scut_images(images_dir=IMAGES_DIR):
                 [[lm.x * iw, lm.y * ih, lm.z * iw] for lm in face_landmarks])
             face_data = extract_face_data(landmarks_array)
 
-            if idx % 200 == 0:
+            img_bgr = cv2.cvtColor(mp_image.numpy_view(), cv2.COLOR_RGB2BGR)
+
+            direction = (face_data["top_center_forehead"][0] - face_data["glabella"][0], 
+                 face_data["top_center_forehead"][1] - face_data["glabella"][1])
+            d = np.array(direction, dtype=float)
+            d = d / np.linalg.norm(d)
+
+            # MediaPipe trichion
+            start_x = face_data["top_center_forehead"][0]
+            start_y = face_data["top_center_forehead"][1]
+
+            start = np.array([start_x, start_y])
+
+            # Safe skin patch 40% distance between glabella and MediaPipe trichion
+            pos_x = face_data["glabella"][0] + 0.4*(face_data["top_center_forehead"][0] - face_data["glabella"][0])
+            pos_y = face_data["glabella"][1] + 0.4*(face_data["top_center_forehead"][1] - face_data["glabella"][1])
+
+            pos = np.array([pos_x, pos_y])
+
+            detection_window = abs(face_data["left_zygomatic"][0] - face_data["right_zygomatic"][0]) * 0.03
+            patch = calculate_detection_window(detection_window, pos, img_bgr)
+
+            forehead_span = np.linalg.norm(face_data["top_center_forehead"] - face_data["glabella"])
+            max_dist = 1.5 * forehead_span
+
+            trichion = calculate_trichion(d, start, img_bgr, detection_window, patch, max_dist)
+            if trichion is not None:
+                face_data["top_center_forehead"] = np.array([trichion[0], trichion[1], face_data["top_center_forehead"][2]])
+
+            if idx % 100 == 0:
                 try:
                     save_landmark_overlay(
                         mp_image, landmarks_array, face_data,
@@ -105,7 +141,6 @@ def process_scut_images(images_dir=IMAGES_DIR):
             ht  = horizontal_thirds(face_data)
             ear = eye_aspect_ratio(face_data)
             ls  = lower_third_split(face_data)
-            img_bgr = cv2.cvtColor(mp_image.numpy_view(), cv2.COLOR_RGB2BGR)
             app = appearance_features(img_bgr, landmarks_array)
 
             ratios = {
