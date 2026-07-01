@@ -122,7 +122,7 @@ export default function App() {
     <div className="app">
       <header>
         <h1>Odin</h1>
-        <span className="subtitle">Facial ratio &amp; attractiveness analysis</span>
+        <span className="subtitle">Facial geometry &amp; ratio analysis</span>
       </header>
 
       <div className="controls">
@@ -177,14 +177,6 @@ export default function App() {
         <aside className="results" style={{ maxHeight: paneHeight }}>
           {result ? (
             <>
-              <div className="score-card">
-                <div className="score-value">{result.score.toFixed(2)}</div>
-                <div className="score-label">/ 10 · {result.sex}</div>
-                {result.boosted && (
-                  <div className="score-note">raw {result.score_raw.toFixed(2)} · male boost applied</div>
-                )}
-              </div>
-
               {result.colors.some((c) => c.hex) && (
                 <div className="swatches">
                   {result.colors.map((c) => (

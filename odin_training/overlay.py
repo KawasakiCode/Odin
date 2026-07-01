@@ -39,18 +39,18 @@ def save_landmark_overlay(mp_image, landmarks_array, face_data, out_path):
     regions = extract_regions(landmarks_array)
 
     # Translucent fills first (blended onto a copy), then crisp outlines on top.
-    overlay = img.copy()
-    for name, poly in regions.items():
-        cv2.fillPoly(overlay, [poly], REGION_COLORS[name])
-    cv2.addWeighted(overlay, 0.4, img, 0.6, 0, img)
-    for name, poly in regions.items():
-        cv2.polylines(img, [poly], isClosed=True, color=REGION_COLORS[name],
-                      thickness=1, lineType=cv2.LINE_AA)
+    # overlay = img.copy()
+    # for name, poly in regions.items():
+    #     cv2.fillPoly(overlay, [poly], REGION_COLORS[name])
+    # cv2.addWeighted(overlay, 0.4, img, 0.6, 0, img)
+    # for name, poly in regions.items():
+    #     cv2.polylines(img, [poly], isClosed=True, color=REGION_COLORS[name],
+    #                   thickness=1, lineType=cv2.LINE_AA)
 
-    # All 478 mesh landmarks as small dots (white, debug).
-    for x, y in landmarks_array[:, :2]:
-        cv2.circle(img, (int(round(x)), int(round(y))), 1, (255, 255, 255), -1,
-                   lineType=cv2.LINE_AA)
+    # # All 478 mesh landmarks as small dots (white, debug).
+    # for x, y in landmarks_array[:, :2]:
+    #     cv2.circle(img, (int(round(x)), int(round(y))), 1, (255, 255, 255), -1,
+    #                lineType=cv2.LINE_AA)
 
     # Trichion marker: magenta circle + crosshair so the hairline lands visibly.
     tx, ty = int(round(face_data["top_center_forehead"][0])), \
