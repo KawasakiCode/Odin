@@ -49,6 +49,45 @@ predictor itself:
 I think the limitations are the most valuable part — they're documented here on
 purpose.
 
+## Results
+
+All figures are aggregate statistics (no face images), reproducible with
+`python plots/generate_plots.py`.
+
+**Where interpretable geometry sits vs. the ceiling.** Hand-crafted features reach
+~0.61 R²; a frozen FaceNet-512 embedding ~0.75; the deep-CNN benchmark ~0.81. I
+measured my own ceiling instead of guessing it.
+
+![Ceiling comparison](plots/1_ceiling_comparison.png)
+
+**How the model behaves — honest out-of-fold predictions.** Note the *tail
+compression*: extreme faces are pulled toward the mean, because ~40 features can't
+confidently place a 2 or a 9. This is worse in RandomForest (why it was dropped).
+
+![Predicted vs actual](plots/2_predicted_vs_actual.png)
+
+**What the model leans on.** Top-15 features per sex, coloured by group — geometry
+dominates, with Procrustes shape and colour/texture contributing.
+
+![Feature importance](plots/3_feature_importance.png)
+
+**The bias finding: male "attractiveness" doesn't transfer across rater
+populations.** Trained on SCUT, the model ranks held-out SCUT males at Spearman
+≈0.76 but a different population's males (CFD) at ≈0.04 — essentially random.
+Females transfer moderately (≈0.35).
+
+![Cross-population transfer](plots/4_cross_population_transfer.png)
+
+**Holistic shape helps, verified across seeds.** Procrustes averageness + shape-PCA
+add +0.013 ± 0.005 R² over 10 random seeds — small, but the sign never flips.
+
+![Procrustes ΔR²](plots/5_procrustes_delta.png)
+
+**The data.** SCUT-FBP5500 label distribution, 2,750 faces per sex, averaged over
+~60 predominantly East-Asian raters.
+
+![Label distribution](plots/6_label_distribution.png)
+
 ## How it works
 
 ```
