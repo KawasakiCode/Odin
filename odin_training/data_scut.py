@@ -124,15 +124,19 @@ def process_scut_images(images_dir=IMAGES_DIR):
             forehead_span = np.linalg.norm(face_data["top_center_forehead"] - face_data["glabella"])
             max_dist = 1.5 * forehead_span
 
-            trichion = calculate_trichion(d, start, img_bgr, detection_window, patch, max_dist)
+            trichion, data, reason = calculate_trichion(d, start, img_bgr, detection_window, patch, max_dist)
             if trichion is not None:
                 face_data["top_center_forehead"] = np.array([trichion[0], trichion[1], face_data["top_center_forehead"][2]])
+            else:
+                reason = "Mediapipe detection"
+            
 
             if idx % 100 == 0:
                 try:
                     save_landmark_overlay(
                         mp_image, landmarks_array, face_data,
                         DEBUG_OVERLAY_DIR / f"scut_{image_id}_overlay.jpg")
+                    print(f"Overlay Data: {image_id}, reason = {reason}, steps={len(data)}")
                 except Exception as e:
                     print(f"Overlay failed for {img_path.name}: {e}")
 

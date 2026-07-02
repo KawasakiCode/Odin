@@ -1,35 +1,57 @@
+import cv2
 import numpy as np
 
 FLOOR = 5
+K = 3
 
 def calculate_trichion(direction, start, image, detection_window, reference_patch, max_dist):
     step = 1
     pos = start.astype(float).copy()
 
+    reason = None
+    run_start = None
+
     MIN_RUN = max(3, detection_window // 2)
 
-    reference_skin = reference_patch.reshape(-1, 3)
-    reference_skin_mean = reference_patch.reshape(-1, 3).mean(axis=0)
-    skin_spread = np.linalg.norm(reference_skin - reference_skin_mean, axis=1).std()
-    skin_spread = max(skin_spread, FLOOR)
-    threshold = 3 * skin_spread
+    data = []
+
+    alpha = 0.15
+    lab_ref = cv2.cvtColor(reference_patch, cv2.COLOR_BGR2LAB)
+    ref_lab = lab_ref.reshape(-1, 3)
+    ref_lab_mean = ref_lab.mean(axis=0)
+    skin_spread = max(np.linalg.norm(ref_lab - ref_lab_mean, axis=1).std(), FLOOR)
+    threshold = K * skin_spread
 
     run = 0
     while 0 <= pos[0] < image.shape[1] and 0 <= pos[1] < image.shape[0] and np.linalg.norm(pos - start) < max_dist:
         patch = calculate_detection_window(detection_window, pos, image)
-        patch_skin_mean = patch.reshape(-1, 3).mean(axis=0)
 
-        dist = np.linalg.norm(patch_skin_mean - reference_skin_mean)
-        if dist > threshold:
+        lab = cv2.cvtColor(patch, cv2.COLOR_BGR2LAB)
+        lab_mean = lab.reshape(-1, 3).mean(axis=0)
+        dist = np.linalg.norm(lab_mean - ref_lab_mean)
+
+        if dist <= threshold:
+            run = 0
+            ref_lab_mean = alpha * lab_mean + (1 - alpha) * ref_lab_mean
+        else:
             if run == 0:
                 run_start = pos.copy()
             run += 1
             if run >= MIN_RUN:
-                return run_start
-        else: 
-            run = 0
+                return run_start, data, reason
+            
         pos = pos + direction * step
-    return None
+        data.append({
+            "point": run_start,
+            "profile": [pos, dist],
+            "start": start,
+            "max_dist": max_dist
+        })
+    if not (0 <= pos[0] < image.shape[1] and 0 <= pos[1] < image.shape[0]):
+        reason = "out_of_bounds"
+    elif not (np.linalg.norm(pos - start) < max_dist):
+        reason = "above_max_dist"
+    return None, data, reason
 
 def calculate_detection_window(detection_window, pos, image):
     round_down_to_odd = lambda x : int((x-1) // 2) * 2 + 1
