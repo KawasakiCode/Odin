@@ -131,7 +131,7 @@ def process_scut_images(images_dir=IMAGES_DIR):
                 reason = "Mediapipe detection"
             
 
-            if idx % 100 == 0:
+            if idx % 100 == 0 and reason == "correct detection":
                 try:
                     save_landmark_overlay(
                         mp_image, landmarks_array, face_data,

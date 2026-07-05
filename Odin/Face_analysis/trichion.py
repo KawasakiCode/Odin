@@ -38,6 +38,7 @@ def calculate_trichion(direction, start, image, detection_window, reference_patc
                 run_start = pos.copy()
             run += 1
             if run >= MIN_RUN:
+                reason = "correct detection"
                 return run_start, data, reason
             
         pos = pos + direction * step
