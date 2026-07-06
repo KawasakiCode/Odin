@@ -180,3 +180,12 @@ tr:last-child td { border-bottom: none; }
 tbody tr { cursor: default; }
 tbody tr.hl { background: rgba(255, 205, 50, 0.12); }
 tbody tr.hl td:first-child { color: #ffd24a; }
+
+/* Per-feature SHAP contribution: signed value + magnitude bar. */
+.impact { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.impact-val { font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
+.impact-bar {
+  position: relative; width: 64px; height: 6px;
+  background: var(--border); border-radius: 3px; overflow: hidden; flex-shrink: 0;
+}
+.impact-bar > span { position: absolute; left: 0; top: 0; height: 100%; border-radius: 3px; }

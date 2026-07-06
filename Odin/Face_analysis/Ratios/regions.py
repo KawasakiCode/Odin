@@ -28,11 +28,6 @@ RIGHT_IRIS = [474, 475, 476, 477]
 LEFT_CHEEK  = [116, 123, 117, 118, 119, 50, 101, 36, 205, 206]
 RIGHT_CHEEK = [345, 352, 346, 347, 348, 280, 330, 266, 425, 426]
 
-# Central forehead patch: wide temple-to-temple span, top at the mesh apex
-# (10/151), bottom edge kept ABOVE the brows (uses mid-forehead 108/151/337,
-# not the brow-level points), so eyebrow hair is never sampled. Convex-hulled.
-FOREHEAD = [10, 151, 108, 337, 109, 338, 67, 297, 103, 332, 104, 333]
-
 
 def _poly(landmarks, idxs, hull=False):
     """Build an Nx2 int pixel polygon from landmark indices."""
@@ -57,5 +52,4 @@ def extract_regions(landmarks):
         "right_iris":  _poly(landmarks, RIGHT_IRIS, hull=True),
         "left_cheek":  _poly(landmarks, LEFT_CHEEK, hull=True),
         "right_cheek": _poly(landmarks, RIGHT_CHEEK, hull=True),
-        "forehead":    _poly(landmarks, FOREHEAD, hull=True),
     }

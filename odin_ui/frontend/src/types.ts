@@ -11,6 +11,14 @@ export interface ColorItem {
   hex: string | null
 }
 
+export interface ContribItem {
+  key: string
+  label: string
+  value: number | null
+  contribution: number
+  landmarks: number[]
+}
+
 export interface AnalyzeResult {
   width: number
   height: number
@@ -18,8 +26,10 @@ export interface AnalyzeResult {
   score: number
   score_raw: number
   boosted: boolean
+  base: number
   landmarks: [number, number][]
   ratios: RatioItem[]
   appearance: RatioItem[]
+  contribs: ContribItem[]
   colors: ColorItem[]
 }

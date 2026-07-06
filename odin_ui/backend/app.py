@@ -30,7 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from Odin.Face_analysis.landmarks import calculate_landmarks_array
 from Odin.Face_analysis.face_data import extract_face_data
 from Odin.Face_analysis.Ratios.appearance import appearance_features
-from Odin.main import add_shape_features, build_features, male_boost, MODEL_PATHS
+from Odin.main import add_shape_features, build_features, feature_contributions, male_boost, MODEL_PATHS
 
 app = FastAPI(title="Odin API")
 app.add_middleware(
@@ -229,7 +229,18 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
     add_shape_features(feats, px, model)
     X = pd.DataFrame([feats], columns=model["feature_names"])
     raw = float(model["xgboost"].predict(X)[0])
+    base, contribs = feature_contributions(model, X)
     score = male_boost(raw, model) if model.get("label") == "MALE" else raw
+
+    contrib_items = sorted(
+        ({"key": k,
+        "label": LABELS.get(k, k),
+        "value": _num(feats.get(k)),
+        "contribution": round(float(c), 3),
+        "landmarks": RATIO_LANDMARKS.get(k, [])}
+        for k, c in contribs.items()),
+        key=lambda d: abs(d["contribution"]), reverse=True,
+    )
 
     return {
         "width": w,
@@ -241,6 +252,8 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
         "landmarks": [[round(float(x), 1), round(float(y), 1)] for x, y, _ in px],
         "ratios": _items(feats, GEOM_KEYS, sex),
         "appearance": _items(feats, APPEARANCE_KEYS, sex),
+        "contribs": contrib_items,
+        "base": round(float(base), 3),
         "colors": [
             {"label": "Lips", "hex": _hex(feats, "lips")},
             {"label": "Eyes", "hex": _hex(feats, "eye")},

@@ -79,17 +79,17 @@ export default function App() {
       ctx.drawImage(img, 0, 0)
       if (!result || !showLandmarks) return
 
-      // Default = union of all landmarks any ratio uses. Hover = just that
-      // ratio's landmarks, drawn bigger/brighter.
+      // Default = union of all landmarks any feature uses. Hover = just that
+      // feature's landmarks, drawn bigger/brighter.
       let indices: number[]
       let highlight = false
-      const item = hovered ? result.ratios.find((r) => r.key === hovered) : undefined
+      const item = hovered ? result.contribs.find((r) => r.key === hovered) : undefined
       if (item && item.landmarks.length) {
         indices = item.landmarks
         highlight = true
       } else {
         const used = new Set<number>()
-        result.ratios.forEach((r) => r.landmarks.forEach((i) => used.add(i)))
+        result.contribs.forEach((r) => r.landmarks.forEach((i) => used.add(i)))
         indices = [...used]
       }
 
@@ -190,40 +190,45 @@ export default function App() {
               )}
 
               <div className="metrics">
-                <h3>Ratios <span className="hint">hover a row to highlight its landmarks</span></h3>
+                <h3>What drove the result{' '}
+                  <span className="hint">ranked by impact · hover to highlight landmarks</span>
+                </h3>
                 <table>
                   <thead>
                     <tr>
-                      <th>Ratio</th>
+                      <th>Feature</th>
                       <th className="num">Value</th>
-                      <th className="num">Ideal ({result.sex})</th>
+                      <th className="num">Impact</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {result.ratios.map((r) => (
-                      <tr
-                        key={r.key}
-                        className={hovered === r.key ? 'hl' : ''}
-                        onMouseEnter={() => setHovered(r.key)}
-                        onMouseLeave={() => setHovered((h) => (h === r.key ? null : h))}
-                      >
-                        <td>{r.label}</td>
-                        <td className="num">{fmt(r.value)}</td>
-                        <td className="num ideal">{r.ideal ?? '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                <h3>Appearance</h3>
-                <table>
-                  <tbody>
-                    {result.appearance.map((r) => (
-                      <tr key={r.key}>
-                        <td>{r.label}</td>
-                        <td className="num">{fmt(r.value)}</td>
-                      </tr>
-                    ))}
+                    {result.contribs.map((r) => {
+                      const maxAbs = Math.abs(result.contribs[0]?.contribution || 1) || 1
+                      const pct = Math.min(100, (Math.abs(r.contribution) / maxAbs) * 100)
+                      const pos = r.contribution >= 0
+                      const color = pos ? 'var(--accent)' : '#ff6b6b'
+                      return (
+                        <tr
+                          key={r.key}
+                          className={hovered === r.key ? 'hl' : ''}
+                          onMouseEnter={() => setHovered(r.key)}
+                          onMouseLeave={() => setHovered((h) => (h === r.key ? null : h))}
+                        >
+                          <td>{r.label}</td>
+                          <td className="num">{fmt(r.value)}</td>
+                          <td className="num">
+                            <div className="impact">
+                              <span className="impact-val" style={{ color }}>
+                                {pos ? '+' : ''}{r.contribution.toFixed(2)}
+                              </span>
+                              <span className="impact-bar">
+                                <span style={{ width: `${pct}%`, background: color }} />
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

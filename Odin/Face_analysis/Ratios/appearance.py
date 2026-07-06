@@ -101,13 +101,13 @@ def appearance_features(img_bgr, landmarks):
 
     Colours are emitted both as numeric R/G/B channels (what RF/XGB train on)
     and as a convenience #RRGGBB string (human-readable in the CSV; dropped
-    before training). Skin colour pools the forehead + both cheeks.
+    before training). Skin colour pools both cheeks (forehead dropped).
     """
     reg = extract_regions(landmarks)
 
-    # Skin texture: single value, mean Laplacian variance over forehead+cheeks.
+    # Skin texture: single value, mean Laplacian variance over the cheeks.
+    # (Forehead dropped: hair/bangs contaminate it on ~half the faces.)
     skin_texture = np.nanmean([
-        laplacian_texture(img_bgr, reg["forehead"]),
         laplacian_texture(img_bgr, reg["left_cheek"]),
         laplacian_texture(img_bgr, reg["right_cheek"]),
     ])
@@ -116,9 +116,8 @@ def appearance_features(img_bgr, landmarks):
     # Pool both irises into one eye colour, skipping pupil-dark pixels.
     eye_rgb = mean_color(img_bgr, [reg["left_iris"], reg["right_iris"]],
                          dark_luma=IRIS_DARK_LUMA)
-    # Skin colour pools the same clean patches used for texture.
-    skin_rgb = mean_color(img_bgr, [reg["forehead"], reg["left_cheek"],
-                                    reg["right_cheek"]])
+    # Skin colour pools the same clean cheek patches used for texture.
+    skin_rgb = mean_color(img_bgr, [reg["left_cheek"], reg["right_cheek"]])
 
     # Facial-contrast features (Russell et al.), computed in CIELab so the
     # luminance (L*) and redness (a*) differences are perceptually meaningful.

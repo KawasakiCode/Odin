@@ -129,13 +129,13 @@ def build_features(face_data, appearance):
     return features
 
 
-def shap(model, X):
+def feature_contributions(model, X):
     booster = model["xgboost"].get_booster()
     dm = xgb.DMatrix(X, feature_names=model["feature_names"])
     contribs = booster.predict(dm, pred_contribs=True)[0]
 
     base = contribs[-1]
-    return dict(zip(model["feature_names"], contribs[:-1]))
+    return base, dict(zip(X.columns, map(float, contribs[:-1])))
 
 def main():
     landmarks, image_bgr = calculate_landmarks_array(IMAGEPATH)
@@ -190,7 +190,10 @@ def main():
     # Order the columns to exactly match what the models were trained on.
     X = pd.DataFrame([features], columns=feature_names)
 
+    base, contribs = feature_contributions(model, X)
     score = float(model["xgboost"].predict(X)[0])
+
+    assert(base + sum(contribs)) == score
 
     # The male model compresses strong faces toward the mean; apply the
     # presentation-layer boost (female is left unchanged).
@@ -198,6 +201,7 @@ def main():
         score = male_boost(score, model)
 
     print(f"Attractiveness ({model['label']}): {score:.2f} / 10")
+    print(f"Contributions per feature: {contribs}")
 
 
 if __name__ == "__main__":
