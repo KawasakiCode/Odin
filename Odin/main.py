@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 import joblib
 import pandas as pd
 import numpy as np
+import xgboost as xgb
 
 from Odin.Face_analysis.trichion import calculate_detection_window, calculate_trichion
 from Odin.Face_analysis.landmarks import calculate_landmarks_array
@@ -128,6 +129,14 @@ def build_features(face_data, appearance):
     return features
 
 
+def shap(model, X):
+    booster = model["xgboost"].get_booster()
+    dm = xgb.DMatrix(X, feature_names=model["feature_names"])
+    contribs = booster.predict(dm, pred_contribs=True)[0]
+
+    base = contribs[-1]
+    return dict(zip(model["feature_names"], contribs[:-1]))
+
 def main():
     landmarks, image_bgr = calculate_landmarks_array(IMAGEPATH)
 
@@ -175,6 +184,7 @@ def main():
     features = build_features(face_data, appearance)
 
     model = joblib.load(MODEL_PATHS[SEX])
+
     add_shape_features(features, pixel_landmarks, model)
     feature_names = model["feature_names"]
     # Order the columns to exactly match what the models were trained on.
