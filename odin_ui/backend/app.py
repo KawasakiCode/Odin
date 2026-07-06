@@ -29,6 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from Odin.Face_analysis.landmarks import calculate_landmarks_array
 from Odin.Face_analysis.face_data import extract_face_data
+from Odin.Face_analysis.trichion import apply_trichion
 from Odin.Face_analysis.Ratios.appearance import appearance_features
 from Odin.main import add_shape_features, build_features, feature_contributions, male_boost, MODEL_PATHS
 
@@ -223,7 +224,11 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
     px[:, 1] *= h
     px[:, 2] *= w
 
-    feats = build_features(extract_face_data(px), appearance_features(img, px))
+    face_data = extract_face_data(px)
+    # Detect the real hairline and overwrite the trichion BEFORE the ratios, so
+    # the UI's 4 trichion-dependent ratios match the CLI and training exactly.
+    trichion_pt, _ = apply_trichion(face_data, img)
+    feats = build_features(face_data, appearance_features(img, px))
 
     model = MODELS[sex]
     add_shape_features(feats, px, model)
@@ -250,6 +255,8 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
         "score_raw": round(raw, 2),
         "boosted": model.get("label") == "MALE" and abs(score - raw) > 1e-6,
         "landmarks": [[round(float(x), 1), round(float(y), 1)] for x, y, _ in px],
+        "trichion": ([round(float(trichion_pt[0]), 1), round(float(trichion_pt[1]), 1)]
+                     if trichion_pt is not None else None),
         "ratios": _items(feats, GEOM_KEYS, sex),
         "appearance": _items(feats, APPEARANCE_KEYS, sex),
         "contribs": contrib_items,

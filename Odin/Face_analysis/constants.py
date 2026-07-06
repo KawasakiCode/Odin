@@ -1,8 +1,8 @@
 # The path of the image to get rated
-IMAGEPATH = "Screenshot 2026-06-13 003526.png"
+IMAGEPATH = "download.jfif"
 # Which trained model to use for this photo: "male" or "female".
 # Each sex has its own model in models/model_<sex>.joblib.
-SEX = "male"
+SEX = "female"
 
 # Path to the MediaPipe Tasks face landmarker model bundle. This file is NOT
 # shipped in the repo — download face_landmarker.task (the refined bundle that

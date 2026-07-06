@@ -28,6 +28,7 @@ export interface AnalyzeResult {
   boosted: boolean
   base: number
   landmarks: [number, number][]
+  trichion: [number, number] | null
   ratios: RatioItem[]
   appearance: RatioItem[]
   contribs: ContribItem[]

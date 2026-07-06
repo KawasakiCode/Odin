@@ -34,7 +34,7 @@ from Odin.Face_analysis.Ratios.calculate_ratios import (
     symmetry_score, width_ratio_46,
 )
 # Reuse the overlay helper so SCUT extraction also dumps debug overlays.
-from Odin.Face_analysis.trichion import calculate_detection_window, calculate_trichion
+from Odin.Face_analysis.trichion import apply_trichion
 from overlay import save_landmark_overlay, DEBUG_OVERLAY_DIR
 
 # Anchor data paths to this file's folder so the script works from any working
@@ -101,42 +101,14 @@ def process_scut_images(images_dir=IMAGES_DIR):
 
             img_bgr = cv2.cvtColor(mp_image.numpy_view(), cv2.COLOR_RGB2BGR)
 
-            direction = (face_data["top_center_forehead"][0] - face_data["glabella"][0], 
-                 face_data["top_center_forehead"][1] - face_data["glabella"][1])
-            d = np.array(direction, dtype=float)
-            d = d / np.linalg.norm(d)
+            trichion, reason = apply_trichion(face_data, img_bgr)
 
-            # MediaPipe trichion
-            start_x = face_data["top_center_forehead"][0]
-            start_y = face_data["top_center_forehead"][1]
-
-            start = np.array([start_x, start_y])
-
-            # Safe skin patch 40% distance between glabella and MediaPipe trichion
-            pos_x = face_data["glabella"][0] + 0.4*(face_data["top_center_forehead"][0] - face_data["glabella"][0])
-            pos_y = face_data["glabella"][1] + 0.4*(face_data["top_center_forehead"][1] - face_data["glabella"][1])
-
-            pos = np.array([pos_x, pos_y])
-
-            detection_window = abs(face_data["left_zygomatic"][0] - face_data["right_zygomatic"][0]) * 0.03
-            patch = calculate_detection_window(detection_window, pos, img_bgr)
-
-            forehead_span = np.linalg.norm(face_data["top_center_forehead"] - face_data["glabella"])
-            max_dist = 1.5 * forehead_span
-
-            trichion, data, reason = calculate_trichion(d, start, img_bgr, detection_window, patch, max_dist)
-            if trichion is not None:
-                face_data["top_center_forehead"] = np.array([trichion[0], trichion[1], face_data["top_center_forehead"][2]])
-            else:
-                reason = "Mediapipe detection"
-            
-
-            if idx % 100 == 0 and reason == "correct detection":
+            if idx % 100 == 0:
                 try:
                     save_landmark_overlay(
                         mp_image, landmarks_array, face_data,
                         DEBUG_OVERLAY_DIR / f"scut_{image_id}_overlay.jpg")
-                    print(f"Overlay Data: {image_id}, reason = {reason}, steps={len(data)}")
+                    print(f"Overlay: {image_id}, reason={reason or 'detected'}")
                 except Exception as e:
                     print(f"Overlay failed for {img_path.name}: {e}")
 

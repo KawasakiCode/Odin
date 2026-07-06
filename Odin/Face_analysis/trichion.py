@@ -70,3 +70,37 @@ def calculate_detection_window(detection_window, pos, image):
     patch = image[y0:y1,x0:x1] # (detection_window, detection_window, 3)
 
     return patch
+
+
+def apply_trichion(face_data, image_bgr):
+    """
+    Detect the real hairline by walking up the forehead midline and overwrite
+    face_data['top_center_forehead'] in place (keeping its z). Falls back to the
+    MediaPipe estimate when detection isn't confident. Single source of truth so
+    the CLI, training extraction, and the UI all compute the 4 trichion-dependent
+    ratios identically.
+
+    Returns (point, reason): the detected [x, y] or None on fallback.
+    """
+    fore = face_data["top_center_forehead"]
+    glab = face_data["glabella"]
+
+    d = np.array([fore[0] - glab[0], fore[1] - glab[1]], dtype=float)
+    d = d / np.linalg.norm(d)
+    start = np.array([fore[0], fore[1]])
+
+    # Skin reference: 40% up from glabella toward the estimate (safely below hair).
+    pos = np.array([glab[0] + 0.4 * (fore[0] - glab[0]),
+                    glab[1] + 0.4 * (fore[1] - glab[1])])
+    window = abs(face_data["left_zygomatic"][0] - face_data["right_zygomatic"][0]) * 0.03
+    ref_patch = calculate_detection_window(window, pos, image_bgr)
+    max_dist = 1.5 * np.linalg.norm(fore - glab)
+
+    trichion, _data, reason = calculate_trichion(
+        d, start, image_bgr, window, ref_patch, max_dist)
+    if trichion is not None:
+        face_data["top_center_forehead"] = np.array(
+            [trichion[0], trichion[1], fore[2]])
+    return trichion, reason
+
+    return patch

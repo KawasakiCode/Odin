@@ -18,22 +18,9 @@ export default function App() {
   const [showLandmarks, setShowLandmarks] = useState(true)
   const [hovered, setHovered] = useState<string | null>(null)
 
-  const [paneHeight, setPaneHeight] = useState<number>()
-
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const canvasPaneRef = useRef<HTMLDivElement>(null)
   const imgElRef = useRef<HTMLImageElement | null>(null)
   const loadedUrlRef = useRef<string | null>(null)
-
-  // Keep the results panel the same height as the image container so the ratio
-  // list scrolls inside it instead of overflowing below the photo.
-  useEffect(() => {
-    const el = canvasPaneRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => setPaneHeight(el.offsetHeight))
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
 
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const picked = e.target.files?.[0]
@@ -93,14 +80,31 @@ export default function App() {
         indices = [...used]
       }
 
-      const radius = Math.max(1, Math.round(canvas.width / (highlight ? 110 : 320)))
-      ctx.fillStyle = highlight ? 'rgba(255, 205, 50, 0.95)' : 'rgba(0, 230, 150, 0.85)'
+      const radius = Math.max(2, Math.round(canvas.width / (highlight ? 85 : 220)))
+      // Dark outline so the dots read on bright / white faces too.
+      ctx.lineWidth = Math.max(1, radius * 0.5)
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
+      ctx.fillStyle = highlight ? 'rgba(255, 205, 50, 0.98)' : 'rgba(0, 230, 150, 0.95)'
       for (const i of indices) {
         const p = result.landmarks[i]
         if (!p) continue
         ctx.beginPath()
         ctx.arc(p[0], p[1], radius, 0, Math.PI * 2)
         ctx.fill()
+        ctx.stroke()
+      }
+
+      // Detected trichion (corrected hairline) as a distinct magenta marker.
+      if (result.trichion) {
+        const [tx, ty] = result.trichion
+        const tr = Math.max(3, Math.round(canvas.width / 130))
+        ctx.beginPath()
+        ctx.arc(tx, ty, tr, 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(255, 60, 220, 0.95)'
+        ctx.fill()
+        ctx.lineWidth = Math.max(1, tr * 0.4)
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)'
+        ctx.stroke()
       }
     }
 
@@ -166,7 +170,7 @@ export default function App() {
       {error && <div className="error">{error}</div>}
 
       <div className="layout">
-        <div className="canvas-pane" ref={canvasPaneRef}>
+        <div className="canvas-pane">
           {imageUrl ? (
             <canvas ref={canvasRef} />
           ) : (
@@ -174,7 +178,7 @@ export default function App() {
           )}
         </div>
 
-        <aside className="results" style={{ maxHeight: paneHeight }}>
+        <aside className="results">
           {result ? (
             <>
               {result.colors.some((c) => c.hex) && (
