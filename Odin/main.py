@@ -171,7 +171,7 @@ def main():
     base, contribs = feature_contributions(model, X)
     score = float(model["xgboost"].predict(X)[0])
 
-    assert(base + sum(contribs)) == score
+    assert abs(float(base) + sum(contribs.values()) - score) < 1e-3
 
     # The male model compresses strong faces toward the mean; apply the
     # presentation-layer boost (female is left unchanged).
