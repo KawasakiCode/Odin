@@ -75,12 +75,12 @@ def add_shape_features(features, pixel_landmarks, model):
     model bundle carries a shape model. No-op for older bundles without one, so
     the pipeline stays backward-compatible.
     """
-    pca = model.get("shape_pca")
+    proj = model.get("shape_pls") or model.get("shape_pca")  # PLS now; PCA = legacy
     ref = model.get("shape_ref_mean")
-    if pca is None or ref is None:
+    if proj is None or ref is None:
         return features
     from Odin.Face_analysis.Ratios.shape import shape_feature_dict
-    features.update(shape_feature_dict(pixel_landmarks[:, :2], ref, pca))
+    features.update(shape_feature_dict(pixel_landmarks[:, :2], ref, proj))
     return features
 
 

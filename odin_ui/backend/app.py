@@ -162,42 +162,30 @@ IDEALS = {
 # ratio correlation table (procrustes_features.correlate_axes_with_ratios).
 # Cleanly-interpreted axes get real names; blended/weak ones are labelled
 # honestly by their dominant correlate or "holistic shape" — not over-claimed.
+# Shape axes are PLS components (supervised), ordered by relevance to the rating,
+# so the low-numbered axes are the ones the model actually leans on. Names below
+# come from each axis's deformation plot + its top-correlated ratios; the muddy
+# tail (weak correlates) is left to the "Minor shape axis" fallback in _label.
 SHAPE_LABELS = {
     "female": {
         "averageness": "Shape typicality",
-        "shape_pc_01": "Lower-face proportion",
-        "shape_pc_02": "Lower-face length & width",
-        "shape_pc_03": "Mouth & lip size",
-        "shape_pc_04": "Jaw slope & width",
-        "shape_pc_05": "Jaw contour",
-        "shape_pc_06": "Eye-spacing & jaw",
-        "shape_pc_07": "Facial width (fifths)",
-        "shape_pc_08": "Eye spacing / width",
-        "shape_pc_09": "Lower-face taper",
-        "shape_pc_10": "Face height / jaw",
-        "shape_pc_11": "Holistic shape",
-        "shape_pc_12": "Holistic shape",
-        "shape_pc_13": "Chin length",
-        "shape_pc_14": "Holistic shape",
-        "shape_pc_15": "Eye spacing",
+        "shape_pls_01": "Lower-face length",
+        "shape_pls_02": "Nose–mouth spacing & lip fullness",
+        "shape_pls_03": "Eye spacing & face width",
+        "shape_pls_04": "Jaw slope & asymmetry",
+        "shape_pls_05": "Chin height & width-to-height",
+        "shape_pls_06": "Lower-third balance",
+        "shape_pls_09": "Face width & nose proportion",
     },
     "male": {
         "averageness": "Shape typicality",
-        "shape_pc_01": "Jaw slope & lower-face",
-        "shape_pc_02": "Lower-face & canthal tilt",
-        "shape_pc_03": "Mouth & lip size",
-        "shape_pc_04": "Face height (golden)",
-        "shape_pc_05": "Eye-spacing & nose width",
-        "shape_pc_06": "Jaw contour",
-        "shape_pc_07": "Facial width (fifths)",
-        "shape_pc_08": "Chin split",
-        "shape_pc_09": "Lower-face taper",
-        "shape_pc_10": "Vertical thirds",
-        "shape_pc_11": "Eye openness / spacing",
-        "shape_pc_12": "Holistic shape",
-        "shape_pc_13": "Jaw taper & canthal",
-        "shape_pc_14": "Lip fullness",
-        "shape_pc_15": "Fifths / eye spacing",
+        "shape_pls_01": "Jaw angularity & face width-to-height",
+        "shape_pls_02": "Chin–mouth (lower-third) balance",
+        "shape_pls_03": "Nose size & midface proportion",
+        "shape_pls_05": "Cheekbone-to-jaw width",
+        "shape_pls_08": "Face width & jaw contour",
+        "shape_pls_11": "Facial asymmetry",
+        "shape_pls_16": "Eye spacing & fifths",
     },
 }
 
@@ -206,6 +194,8 @@ def _label(k, sex):
     """UI label for a feature key, using the per-sex shape names for shape axes."""
     if k in SHAPE_LABELS.get(sex, {}):
         return SHAPE_LABELS[sex][k]
+    if k.startswith("shape_pls_"):        # unnamed (weakly-interpretable) PLS axis
+        return "Minor shape axis"
     return LABELS.get(k, k)
 
 

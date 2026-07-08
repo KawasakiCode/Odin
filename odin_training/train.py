@@ -28,22 +28,30 @@ BASE = Path(__file__).resolve().parent
 
 
 def load_features():
-    """Ratios + shape features per sex, plus the fitted shape model per sex."""
+    """
+    Ratios + the raw landmarks per sex. Shape features are NOT baked in here:
+    the shape model is PLS (supervised), so it must be fit on each fold's train
+    split to avoid leaking the labels. Callers add shape features via augment()
+    after they have chosen a fit split. Returns (X_ratios, y, raw) per sex.
+    """
     Xf, Xm, yf, ym = split_by_gender()
     id2lm = load_landmarks()
 
-    def augment(X, y):
+    def prep(X, y):
         ids = [i for i in X.index if i in id2lm]
         X, y = X.loc[ids], y.loc[ids]
         raw = np.stack([id2lm[i] for i in ids]).astype(np.float64)
-        M, pca = fit_shape_model(raw)
-        shp = pd.DataFrame(shape_feature_matrix(raw, M, pca),
-                           columns=SHAPE_NAMES, index=X.index)
-        return pd.concat([X, shp], axis=1), y, (M, pca)
+        return X, y, raw
 
-    Xf, yf, shape_f = augment(Xf, yf)
-    Xm, ym, shape_m = augment(Xm, ym)
-    return Xf, Xm, yf, ym, shape_f, shape_m
+    return prep(Xf, yf), prep(Xm, ym)
+
+
+def augment(X_ratios, raw, M, proj):
+    """Concatenate shape features (averageness + PLS axes) onto the ratio matrix,
+    using a shape model (M, proj) that was fit elsewhere (on the train split)."""
+    shp = pd.DataFrame(shape_feature_matrix(raw, M, proj),
+                       columns=SHAPE_NAMES, index=X_ratios.index)
+    return pd.concat([X_ratios, shp], axis=1)
 
 
 def report(name, fitted_model, X_test, y_test, feature_names):
@@ -66,15 +74,26 @@ def report(name, fitted_model, X_test, y_test, feature_names):
         print(f"{fname:35s} {imp:6.3f}")
 
 
-def train_models(label, X, y, shape_model):
-    """Train and evaluate XGBoost on one gender subset, then export it."""
+def train_models(label, X_ratios, y, raw):
+    """Train and evaluate XGBoost on one gender subset, then export it.
+
+    The held-out metric is honest: the PLS shape model is fit on the TRAIN split
+    only and applied to the test split, so the shape features never see the test
+    labels. The exported bundle (see export_model) instead fits shape on all data.
+    """
+    n_feat = X_ratios.shape[1] + len(SHAPE_NAMES)
     print("\n" + "=" * 70)
-    print(f"  {label}  ({len(X)} faces, {X.shape[1]} features)")
+    print(f"  {label}  ({len(X_ratios)} faces, {n_feat} features)")
     print("=" * 70)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.20, random_state=RANDOM_STATE
-    )
+    idx = np.arange(len(X_ratios))
+    tr, te = train_test_split(idx, test_size=0.20, random_state=RANDOM_STATE)
+
+    # Shape model fit on TRAIN only, then applied to both splits.
+    M, proj = fit_shape_model(raw[tr], y.iloc[tr].values)
+    X_train = augment(X_ratios.iloc[tr], raw[tr], M, proj)
+    X_test = augment(X_ratios.iloc[te], raw[te], M, proj)
+    y_train, y_test = y.iloc[tr], y.iloc[te]
 
     # Early stopping needs a validation set carved from TRAIN only (never the
     # test set, which would leak it and inflate the score).
@@ -90,22 +109,26 @@ def train_models(label, X, y, shape_model):
     xgb_model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
     print(f"\n{label} — XGBoost stopped at {xgb_model.best_iteration + 1} trees "
           f"(of 1000 max; best val score {xgb_model.best_score:.3f})")
-    report(f"{label} — XGBoost", xgb_model, X_test, y_test, X.columns)
+    report(f"{label} — XGBoost", xgb_model, X_test, y_test, X_train.columns)
 
-    export_model(label, X, y, xgb_model.best_iteration + 1, shape_model)
+    export_model(label, X_ratios, y, raw, xgb_model.best_iteration + 1)
 
 
-def export_model(label, X, y, n_estimators, shape_model):
-    """Refit XGB on all rows and save it to models/ with metadata + shape model.
+def export_model(label, X_ratios, y, raw, n_estimators):
+    """Refit the shape model + XGB on ALL rows and save to models/.
 
-    The feature column order, the target, the male-boost calibration stats, and
-    the Procrustes shape model (consensus mean + PCA) are bundled with the model
-    so inference reproduces the exact feature vector.
+    Fitting shape on all training data here is correct — the deployed model uses
+    every face it has; only the CV metric above needs per-fold shape fitting. The
+    feature column order, target, male-boost calibration stats, and the shape
+    model (consensus mean + PLS projection) are bundled so inference reproduces
+    the exact feature vector.
     """
     MODEL_DIR = BASE.parent / "models"
     MODEL_DIR.mkdir(exist_ok=True)
     slug = label.lower().replace(" ", "_")
-    ref_mean, pca = shape_model
+
+    M, proj = fit_shape_model(raw, y.values)
+    X = augment(X_ratios, raw, M, proj)
 
     xgb_full = xgb.XGBRegressor(
         n_estimators=n_estimators, learning_rate=0.05, max_depth=4,
@@ -125,8 +148,8 @@ def export_model(label, X, y, n_estimators, shape_model):
         "n_samples": len(X),
         "xgb_pred_mean": float(preds.mean()),
         "xgb_pred_max": float(preds.max()),
-        "shape_ref_mean": ref_mean,
-        "shape_pca": pca,
+        "shape_ref_mean": M,
+        "shape_pls": proj,
     }
     out = MODEL_DIR / f"model_{slug}.joblib"
     joblib.dump(bundle, out)
@@ -134,16 +157,20 @@ def export_model(label, X, y, n_estimators, shape_model):
           f"({len(X)} rows, {X.shape[1]} features)")
 
 
-def cross_validate(label, X, y, n_splits=5):
-    """K-fold CV for XGBoost (mean ± std). Optional diagnostic — slow-ish."""
+def cross_validate(label, X_ratios, y, raw, n_splits=5):
+    """Honest K-fold CV: the PLS shape model is refit on each fold's train split,
+    so nothing leaks. This is the number to trust / cite (report()'s single split
+    is just a quick fit-check)."""
     print("\n" + "#" * 70)
-    print(f"  {label}  —  {n_splits}-fold cross-validation  ({len(X)} faces)")
+    print(f"  {label}  —  {n_splits}-fold cross-validation  ({len(X_ratios)} faces)")
     print("#" * 70)
 
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
     scores = {"r2": [], "mae": [], "rmse": []}
-    for train_idx, test_idx in kf.split(X):
-        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    for train_idx, test_idx in kf.split(X_ratios):
+        M, proj = fit_shape_model(raw[train_idx], y.iloc[train_idx].values)
+        X_train = augment(X_ratios.iloc[train_idx], raw[train_idx], M, proj)
+        X_test = augment(X_ratios.iloc[test_idx], raw[test_idx], M, proj)
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
         X_tr, X_val, y_tr, y_val = train_test_split(
             X_train, y_train, test_size=0.20, random_state=RANDOM_STATE)
@@ -165,11 +192,11 @@ def cross_validate(label, X, y, n_splits=5):
 
 
 if __name__ == "__main__":
-    X_female, X_male, y_female, y_male, shape_f, shape_m = load_features()
+    (X_female, y_female, raw_female), (X_male, y_male, raw_male) = load_features()
 
-    train_models("FEMALE", X_female, y_female, shape_f)
-    train_models("MALE", X_male, y_male, shape_m)
+    train_models("FEMALE", X_female, y_female, raw_female)
+    train_models("MALE", X_male, y_male, raw_male)
 
-    # Optional, slower diagnostics — uncomment to run honest CV:
-    # cross_validate("FEMALE", X_female, y_female)
-    # cross_validate("MALE", X_male, y_male)
+    # Optional, slower diagnostics — uncomment for the honest per-fold CV number:
+    cross_validate("FEMALE", X_female, y_female, raw_female)
+    cross_validate("MALE", X_male, y_male, raw_male)

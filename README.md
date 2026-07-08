@@ -24,10 +24,11 @@ geometric ratios explain attractiveness ratings at all, and where do they hit a
 wall?* Treating it as an honest ML investigation produced clearer findings than the
 predictor itself:
 
-- **Geometry explains ~60% of the rating variance and no more.** Cross-validated
-  R² parks around **0.61–0.63**; the rest is skin/texture/gestalt that landmark
-  geometry simply cannot see. Bigger models and hyperparameter tuning don't move
-  it — the ceiling is the *features*, not the model.
+- **Geometry explains ~66% of the rating variance — and the *features*, not the
+  model, set that ceiling.** Cross-validated R² reaches **0.657 (male) / 0.666
+  (female)** once shape is captured with supervised **PLS** axes; the rest is
+  skin/texture/gestalt landmark geometry cannot see. Bigger models and tuning never
+  moved it — but *better features* did: PCA→PLS shape alone added +0.03–0.04 R².
 - **"Attractiveness" doesn't transfer across rater populations for male faces.**
   A model trained on SCUT ranks held-out SCUT males well (Spearman ≈ 0.76) but
   ranks a different population's male faces (CFD) at **≈ 0.04 — essentially
@@ -37,10 +38,15 @@ predictor itself:
   leaf-averaging model, regresses the tails toward the crowd mean (it literally
   can't rate an 8/10 face as an 8) — so it was dropped in favour of **XGBoost**,
   whose boosting follows the full curve.
-- **Holistic shape helps a little.** Procrustes *averageness* + shape-PCA features
-  add a small but consistent **+0.013 ± 0.005 R²** (averaged over 10 random seeds,
-  per sex) over the isolated ratios — modest, but the sign never flips across seeds,
-  so it's signal rather than noise.
+- **Supervised shape (PLS) is the single biggest lever.** Swapping unsupervised
+  shape-PCA for **PLS** — which orients each shape axis toward the *rating* rather
+  than toward raw variance — roughly doubles what geometry contributes. The
+  Procrustes features (averageness + 25 PLS axes) add **+0.044 (female) / +0.065
+  (male) R²** over the ratios alone (10-seed OOF), of which ~+0.03 is PLS beating
+  PCA at the same axis count. It lifts honest 5-fold CV to **0.666 / 0.657**, and
+  for males a *single* PLS axis — jaw angularity × face width-to-height — becomes
+  the model's #1 feature. Interpretability is preserved: every axis is still a
+  plottable deformation mode, now labelled by the shape change most tied to the score.
 - **Hand-crafted skin descriptors barely move the needle.** To test whether the
   "skin quality" part of the ceiling gap is recoverable *by design*, I added
   colour-unevenness (CIELab a\*/b\* spread → pigmentation/blotchiness) and a
@@ -50,10 +56,12 @@ predictor itself:
   itself. The takeaway is the interesting part: the gap to a deep embedding is
   **not** mostly nameable skin texture waiting to be measured — it's un-interpretable
   gestalt.
-- **Interpretable geometry leaves ~0.14 R² on the table vs. a deep embedding.** A
-  frozen FaceNet-512 embedding + Ridge reaches ~0.75 R², and the deep-CNN benchmark
-  ~0.81 (see *How far this is from the ceiling* below). The hand-crafted model trades
-  that accuracy for explanations you can actually read.
+- **Interpretable geometry now leaves only ~0.08–0.09 R² vs. a deep embedding.** A
+  frozen FaceNet-512 embedding + Ridge reaches ~0.75 R² and the deep-CNN benchmark
+  ~0.81, while the hand-crafted PLS model reaches **~0.66** (see *How far this is
+  from the ceiling* below). What remains is un-interpretable gestalt and
+  photographic confounds — the hand-crafted model trades that last sliver for
+  explanations you can actually read.
 
 I think the limitations are the most valuable part — they're documented here on
 purpose.
@@ -64,14 +72,15 @@ All figures are aggregate statistics (no face images), reproducible with
 `python plots/generate_plots.py`.
 
 **Where interpretable geometry sits vs. the ceiling.** Hand-crafted features reach
-~0.61 R²; a frozen FaceNet-512 embedding ~0.75; the deep-CNN benchmark ~0.81. I
+~0.66 R²; a frozen FaceNet-512 embedding ~0.75; the deep-CNN benchmark ~0.81. I
 measured my own ceiling instead of guessing it.
 
 ![Ceiling comparison](plots/1_ceiling_comparison.png)
 
 **How the model behaves — honest out-of-fold predictions.** Note the *tail
-compression*: extreme faces are pulled toward the mean, because ~40 features can't
-confidently place a 2 or a 9. This is worse in RandomForest (why it was dropped).
+compression*: extreme faces are pulled toward the mean, because hand-crafted
+features can't confidently place a 2 or a 9. This is worse in RandomForest (why it
+was dropped).
 
 ![Predicted vs actual](plots/2_predicted_vs_actual.png)
 
@@ -87,8 +96,10 @@ Females transfer moderately (≈0.35).
 
 ![Cross-population transfer](plots/4_cross_population_transfer.png)
 
-**Holistic shape helps, verified across seeds.** Procrustes averageness + shape-PCA
-add +0.013 ± 0.005 R² over 10 random seeds — small, but the sign never flips.
+**Supervised shape (PLS) is the biggest lever, verified across seeds.** Procrustes
+averageness + shape-PLS add **+0.044 (female) / +0.065 (male) R²** over the ratios
+(10-seed OOF), of which ~+0.03 is PLS beating PCA at the same axis count — the sign
+never flips.
 
 ![Procrustes ΔR²](plots/5_procrustes_delta.png)
 
@@ -103,7 +114,7 @@ add +0.013 ± 0.005 R² over 10 random seeds — small, but the sign never flips
 photo ──► MediaPipe FaceLandmarker (478 landmarks)
       ──► geometric ratios   (thirds, fifths, golden, FWHR, jaw, EAR, …)
       ──► appearance         (skin texture + colour-unevenness + blemish, lip/eye/skin colour, CIELab contrasts)
-      ──► Procrustes shape   (averageness + 15 shape-PCA components)
+      ──► Procrustes shape   (averageness + 25 shape-PLS axes, oriented toward the rating)
       ──► XGBoost regressor  ──► 1–10 score (+ optional male presentation boost)
 ```
 
@@ -132,7 +143,7 @@ odin_ui/                   # web UI (upload a photo → landmarks overlay + rati
 odin_model/                # training side (datasets NOT included — see below)
 ├── data_scut.py           #   SCUT feature extraction → CSV cache
 ├── extract_landmarks.py   #   one-time raw-landmark cache (for shape features)
-├── shape_utils.py         #   GPA + shape-PCA fitting
+├── shape_utils.py         #   GPA + shape-PLS fitting
 ├── train.py               #   XGBoost training, CV, bundle export
 └── overlay.py             #   debug region overlays
 models/                    # trained artifacts
@@ -182,7 +193,7 @@ male/female ideal beside it), and the model score.
 ```bash
 cd odin_model
 python extract_landmarks.py   # one-time landmark cache
-python train.py               # → 56-feature bundles in odin_model/models/
+python train.py               # → 69-feature bundles in models/
 ```
 
 ## Data & ethics
@@ -237,18 +248,20 @@ cite the set(s) used:
 
 ## Model performance
 
-Trained on **SCUT-FBP5500** (2,750 faces per sex), 56 features, scored with
-**5-fold cross-validation** (held-out, not training-fit):
+Trained on **SCUT-FBP5500** (2,750 faces per sex), 69 features, scored with
+**5-fold cross-validation** (held-out, not training-fit). The shape model (PLS) is
+refit on each fold's train split, so the numbers are leakage-free:
 
 | Model | MAE | RMSE | R² |
 |-------|-----|------|-----|
-| Female | 0.752 | 0.973 | 0.633 |
-| Male (raw XGBoost) | 0.676 | 0.910 | 0.613 |
+| Female | 0.718 | 0.928 | 0.666 ± 0.018 |
+| Male (raw XGBoost) | 0.632 | 0.854 | 0.657 ± 0.019 |
 
 The labels are on a 1–10 scale (rescaled from SCUT's 1–5). For context, divide MAE
 by 2.25 to compare with the deep-CNN SCUT literature (≈ 0.22 MAE on 1–5): these
 hand-crafted-feature models sit at the top of the *classical/interpretable* range,
-below end-to-end CNNs — expected, since they use ~25 ratios instead of raw pixels.
+below end-to-end CNNs — expected, since they use hand-built ratios + shape instead
+of raw pixels.
 
 A male-only **presentation boost** can stretch above-mean scores toward a more
 intuitive scale; it intentionally trades fit against SCUT's own raters, so it is a
@@ -262,7 +275,7 @@ under the **same 5-fold CV protocol** (1–10 scale):
 
 | Approach | Male R² | Female R² | What it captures |
 |----------|---------|-----------|------------------|
-| Hand-crafted features (this project) | 0.613 | 0.633 | interpretable geometry + colour + shape |
+| Hand-crafted features (this project) | 0.657 | 0.666 | interpretable geometry + colour + PLS shape |
 | Frozen FaceNet-512 embedding + Ridge | 0.749 | 0.759 | signal in a face-recognition embedding |
 | End-to-end CNN (SCUT-FBP5500 benchmark) | ≈ 0.81 | ≈ 0.81 | the full-image ceiling |
 
@@ -278,28 +291,31 @@ How to read it:
   ~**0.75 R²**, about **94% of the deep-CNN ceiling**. Most of the extractable
   signal lives in a generic face representation, not in attractiveness-specific
   training.
-- The **interpretable features leave ~0.13–0.14 R²** relative to that embedding —
-  the cost of interpretability. I probed how much of that is recoverable by hand:
-  adding skin colour-unevenness and blemish descriptors (see *What this project is
-  really about*) closed only **~0.005** of it. So the gap is mostly holistic
-  "gestalt" geometry and photographic confounds that **don't reduce to nameable
-  features**, not unmeasured skin quality. The realistic *explainable* ceiling sits
-  **between 0.61 and 0.75** — and the skin-descriptor result suggests it's nearer the
-  low end.
-- The **male gap is slightly larger than the female gap**, and the embedding nearly
-  erases the male/female difference (0.749 vs 0.759) that geometry alone could not —
-  evidence that male attractiveness leans more on signal geometry cannot see.
+- The **interpretable features now leave only ~0.08–0.09 R²** relative to that
+  embedding — down from ~0.14 once shape moved from PCA to **PLS** (supervised shape
+  axes, +0.03–0.04 R²). What's left resisted hand-crafting: adding skin
+  colour-unevenness and blemish descriptors closed only **~0.005** of it. So the
+  residual gap is mostly holistic "gestalt" geometry and photographic confounds that
+  **don't reduce to nameable features**, not unmeasured skin quality — and the
+  realistic *explainable* ceiling has climbed to **~0.66**, close to what a frozen
+  identity embedding gets.
+- **PLS shape closed the male gap.** Supervised shape helped males most (+0.065 vs
+  +0.044 R²), so both sexes now sit almost level against the embedding (~0.09 gap
+  each), where PCA-era male geometry had trailed. That fits the earlier finding that
+  male attractiveness leans harder on geometry — geometry the *right* shape features
+  can finally capture.
 
 ## Importing the model into another project
 
 The `.joblib` bundle is **not** self-contained: a prediction is only valid if the
-56 input features are produced by this exact pipeline (same landmarks, pixel
+69 input features are produced by this exact pipeline (same landmarks, pixel
 scaling, ratio definitions, shape basis, and column order). Copy the feature code
 with the model — `Odin/` (the whole package) + `models/` — not just the bundle.
 
 **Each bundle is a dict:** `xgboost`, `feature_names` (required column order),
 `label`, `target`, `n_samples`, male calibration stats `xgb_pred_mean` /
-`xgb_pred_max`, and the shape model `shape_ref_mean` / `shape_pca`.
+`xgb_pred_max`, and the shape model `shape_ref_mean` / `shape_pls` (a fitted
+`PLSRegression`; older bundles carry `shape_pca` instead).
 
 **Minimal usage** (from the project root):
 ```python

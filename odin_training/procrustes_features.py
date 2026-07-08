@@ -37,7 +37,8 @@ for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
 import numpy as np
 import pandas as pd
 import joblib
-from shape_utils import shape_feature_matrix, load_landmarks
+from shape_utils import load_landmarks
+from Odin.Face_analysis.Ratios.shape import align_to_reference
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -336,25 +337,53 @@ def run_pls_k_sweep(k_list=(6, 8, 10, 12, 15), seeds=RS, include_ref=True):
             print(f"  + PLS({k:>2})   : R2 = {v.mean():.3f} +/- {sd(v):.3f}{dtxt}")
 
 
-def interprete_shape_axes(index, bundle):
-    pca = bundle["shape_pca"]
-    sd = pca.explained_variance_[index] ** 0.5
-    comp = pca.components_[index]
+def _sex_shape_scores(sex):
+    """
+    Load the (retrained) bundle and this sex's training faces, and return
+    (bundle, df, flat, scores, mean_flat): the GPA-aligned flattened shapes, the
+    PLS scores per face (matching shape_pls_01..N), and the mean shape.
+    """
+    bundle = joblib.load(MODEL_PATHS[sex])
+    M = bundle["shape_ref_mean"]
+    proj = bundle.get("shape_pls") or bundle["shape_pca"]   # PLS now; PCA = legacy
 
-    shape_minus = (pca.mean_ - 2 * sd * comp).reshape(478,2)
-    shape_plus = (pca.mean_ + 2 * sd * comp).reshape(478,2)
+    id2lm = load_landmarks()
+    df = pd.read_csv(Path(__file__).resolve().parent / "training_data_scut.csv")
+    letter = "M" if sex == "male" else "F"           # bundle uses word, CSV uses letter
+    df = df[df["Image_ID"].str[1] == letter]
+    df = df[df["Image_ID"].isin(id2lm)].reset_index(drop=True)
 
-    return shape_minus, shape_plus
+    ids = df["Image_ID"].tolist()
+    raw = np.stack([id2lm[i] for i in ids]).astype(np.float64)
+    flat = np.stack([align_to_reference(c, M) for c in raw]).reshape(len(raw), -1)
+    scores = proj.transform(flat)
+    return bundle, df, flat, scores, flat.mean(axis=0)
+
+
+def _axis_deformation(flat, scores, mean_flat, i, n_sigma=2.0):
+    """
+    Empirical deformation for shape axis i: the OLS slope of each landmark
+    coordinate on score i — how the shape moves per unit of that score. Method-
+    agnostic (works for PLS or PCA) and stays in original coordinate units, so no
+    projector-specific scaling is needed. Returns (minus, plus) as (P, 2) arrays
+    at -/+ n_sigma standard deviations of the score.
+    """
+    t = scores[:, i]
+    tc = t - t.mean()
+    direction = (flat - mean_flat).T @ tc / (tc @ tc)      # (2P,)
+    step = n_sigma * t.std() * direction
+    return (mean_flat - step).reshape(-1, 2), (mean_flat + step).reshape(-1, 2)
+
 
 def run_interpretability_and_plot(sex):
-    """Render a -2σ/+2σ deformation plot per shape axis into shape_axes_plots/."""
+    """Render a -2σ/+2σ deformation plot per PLS shape axis into shape_axes_plots/."""
     out_dir = PROJECT_ROOT / "shape_axes_plots"
     out_dir.mkdir(exist_ok=True)
 
-    bundle = joblib.load(MODEL_PATHS[sex])
-    n = bundle["shape_pca"].n_components_
+    _, _, flat, scores, mean_flat = _sex_shape_scores(sex)
+    n = scores.shape[1]
     for i in range(n):
-        minus, plus = interprete_shape_axes(i, bundle)
+        minus, plus = _axis_deformation(flat, scores, mean_flat, i)
 
         fig, ax = plt.subplots(figsize=(4.2, 4.8))
         ax.scatter(minus[:, 0], minus[:, 1], s=6, color="#2a6fdb", label="−2σ")
@@ -367,10 +396,10 @@ def run_interpretability_and_plot(sex):
         ax.set_aspect("equal")
         ax.invert_yaxis()          # image y grows downward -> flip so the face is upright
         ax.axis("off")
-        ax.set_title(f"{sex}  ·  shape_pc_{i + 1:02d}")
+        ax.set_title(f"{sex}  ·  shape_pls_{i + 1:02d}")
         ax.legend(loc="upper right", fontsize=8)
         fig.tight_layout()
-        fig.savefig(out_dir / f"{sex}_shape_pc_{i + 1:02d}.png", dpi=130)
+        fig.savefig(out_dir / f"{sex}_shape_pls_{i + 1:02d}.png", dpi=130)
         plt.close(fig)
 
     print(f"saved {n} axis plots -> {out_dir}")
@@ -378,35 +407,24 @@ def run_interpretability_and_plot(sex):
 
 def correlate_axes_with_ratios(sex):
     """
-    Name each shape axis objectively: for every face, correlate its PC score
-    (from the BUNDLE's shape model, so it matches shape_pc_01..15) against every
+    Name each PLS shape axis objectively: for every face, correlate its axis score
+    (from the BUNDLE's shape model, so it matches shape_pls_01..N) against every
     named ratio, and print the top-3 correlated ratios per axis alongside the
     model's global (gain) importance for that axis. Sorted by importance, so the
     axes the model actually pays for come first.
     """
-    bundle = joblib.load(MODEL_PATHS[sex])
-    M, pca = bundle["shape_ref_mean"], bundle["shape_pca"]
+    bundle, df, _, scores, _ = _sex_shape_scores(sex)
     imp = dict(zip(bundle["feature_names"], bundle["xgboost"].feature_importances_))
-
-    id2lm = load_landmarks()
-    df = pd.read_csv(Path(__file__).resolve().parent / "training_data_scut.csv")
-    letter = "M" if sex == "male" else "F"           # bundle uses word, CSV uses letter
-    df = df[df["Image_ID"].str[1] == letter]
-    df = df[df["Image_ID"].isin(id2lm)].reset_index(drop=True)
-
-    ids = df["Image_ID"].tolist()
-    raw = np.stack([id2lm[i] for i in ids]).astype(np.float64)
-    pc_scores = shape_feature_matrix(raw, M, pca)[:, 1:]   # drop averageness -> (n, 15)
 
     ratio_cols = [c for c in df.columns
                   if c not in ("Image_ID", "Attractiveness", "sex")]
     R = df[ratio_cols].fillna(df[ratio_cols].mean()).values
 
     rows = []
-    for k in range(pc_scores.shape[1]):
-        name = f"shape_pc_{k + 1:02d}"
+    for k in range(scores.shape[1]):
+        name = f"shape_pls_{k + 1:02d}"
         corr = sorted(
-            ((c, np.corrcoef(pc_scores[:, k], R[:, j])[0, 1])
+            ((c, np.corrcoef(scores[:, k], R[:, j])[0, 1])
              for j, c in enumerate(ratio_cols)),
             key=lambda t: abs(t[1]), reverse=True)
         top = ", ".join(f"{c} ({r:+.2f})" for c, r in corr[:3])
@@ -414,9 +432,9 @@ def correlate_axes_with_ratios(sex):
 
     rows.sort(key=lambda r: r[1], reverse=True)   # most-important axis first
     print(f"\n=== {sex}: shape axes (by model importance) ===")
-    print(f"{'axis':12} {'import':>7}   top-correlated ratios")
+    print(f"{'axis':14} {'import':>7}   top-correlated ratios")
     for name, im, top in rows:
-        print(f"{name:12} {im:7.3f}   {top}")
+        print(f"{name:14} {im:7.3f}   {top}")
 
 
 def main(rs):

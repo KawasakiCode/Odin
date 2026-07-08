@@ -11,15 +11,18 @@ from pathlib import Path
 
 import numpy as np
 from scipy.linalg import orthogonal_procrustes
-from sklearn.decomposition import PCA
+from sklearn.cross_decomposition import PLSRegression
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from Odin.Face_analysis.Ratios.shape import _center_scale, align_to_reference
 
-N_PCA = 15
-RANDOM_STATE = 42
-SHAPE_NAMES = ["averageness"] + [f"shape_pc_{i:02d}" for i in range(1, N_PCA + 1)]
+# Shape axes are PLS components, not PCA: PLS orients each axis toward the
+# attractiveness rating (max covariance with y) instead of toward raw shape
+# variance, so it packs far more predictive signal into the same number of
+# interpretable deformation modes. k=25 chosen from a 10-seed OOF sweep.
+N_SHAPE = 25
+SHAPE_NAMES = ["averageness"] + [f"shape_pls_{i:02d}" for i in range(1, N_SHAPE + 1)]
 # Anchor the cache to this file's folder so it resolves from any CWD.
 LANDMARK_CACHE = str(Path(__file__).resolve().parent / "landmarks_scut.npz")
 
@@ -48,16 +51,23 @@ def gpa(raw, iters=5):
     return M
 
 
-def fit_shape_model(raw):
-    """Fit (consensus mean, PCA) on a set of (P, 2) configs."""
+def fit_shape_model(raw, y):
+    """
+    Fit (consensus mean, PLS projection) on a set of (P, 2) configs.
+
+    PLS is supervised, so `y` (the attractiveness ratings for these faces) is
+    required. IMPORTANT: to keep CV honest, fit this on the TRAIN split only —
+    fitting on data you later evaluate on leaks the labels through the projection.
+    Fitting on all training data for the deployed bundle is fine.
+    """
     M = gpa(raw)
     flat = np.stack([align_to_reference(c, M) for c in raw]).reshape(len(raw), -1)
-    pca = PCA(n_components=N_PCA, random_state=RANDOM_STATE).fit(flat)
-    return M, pca
+    pls = PLSRegression(n_components=N_SHAPE).fit(flat, y)
+    return M, pls
 
 
-def shape_feature_matrix(raw, M, pca):
-    """[averageness, shape_pc_01..N] for each (P, 2) config, as an (n, 16) array."""
+def shape_feature_matrix(raw, M, proj):
+    """[averageness, shape_pls_01..N] for each (P, 2) config, as an (n, 1+N) array."""
     flat = np.stack([align_to_reference(c, M) for c in raw]).reshape(len(raw), -1)
     avg = np.linalg.norm(flat - M.reshape(1, -1), axis=1)
-    return np.column_stack([avg, pca.transform(flat)])
+    return np.column_stack([avg, proj.transform(flat)])

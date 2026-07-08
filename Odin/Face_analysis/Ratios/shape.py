@@ -29,18 +29,19 @@ def align_to_reference(config_xy, ref_mean):
     return c @ R
 
 
-def shape_feature_dict(config_xy, ref_mean, pca):
+def shape_feature_dict(config_xy, ref_mean, proj):
     """
-    {averageness, shape_pc_01..N} for one face.
+    {averageness, shape_pls_01..N} for one face.
 
     config_xy: (P, 2) landmark coords (pixel space; scale is removed here).
     ref_mean:  (P, 2) consensus mean shape stored in the bundle.
-    pca:       fitted sklearn PCA over row-major-flattened aligned shapes.
+    proj:      fitted shape projection (PLS) over row-major-flattened aligned
+               shapes. Only .transform is used here, so any projector works.
     """
     aligned = align_to_reference(config_xy, ref_mean)
     averageness = float(np.linalg.norm(aligned - ref_mean))
-    pcs = pca.transform(aligned.reshape(1, -1))[0]
+    pcs = proj.transform(aligned.reshape(1, -1))[0]
     feats = {"averageness": averageness}
     for i, v in enumerate(pcs, start=1):
-        feats[f"shape_pc_{i:02d}"] = float(v)
+        feats[f"shape_pls_{i:02d}"] = float(v)
     return feats
