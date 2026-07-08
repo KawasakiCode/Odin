@@ -43,6 +43,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy.linalg import orthogonal_procrustes
 from sklearn.decomposition import PCA
+from sklearn.cross_decomposition import PLSRegression
 from sklearn.model_selection import KFold, train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from tqdm import tqdm
@@ -178,6 +179,161 @@ def run_skin_dr2():
         print(f"  without skin : R2 = {n.mean():.3f} ± {n.std(ddof=1):.3f}")
         print(f"  with skin    : R2 = {w.mean():.3f} ± {w.std(ddof=1):.3f}")
         print(f"  ΔR²          : {dl.mean():+.4f} ± {dl.std(ddof=1):.4f}")
+
+
+def run_shape_compare(k_pca=15, k_pls=15, seeds=RS):
+    """
+    PCA vs PLS shape projection, honest 10-seed 5-fold OOF, per sex.
+
+    Three models are compared: ratios only, ratios + PCA-shape, ratios + PLS-shape
+    (both projections carry the same averageness feature, so the only difference is
+    HOW the shape axes are chosen). Both the PCA and the PLS basis are refit on each
+    fold's TRAIN split — mandatory for PLS, which sees y — so nothing leaks. Prints
+    mean ± std (ddof=1) R² and the paired PLS − PCA gap. Pass seeds=[42] for a quick
+    single-seed smoke test.
+    """
+    npz = np.load("landmarks_scut.npz", allow_pickle=True)
+    ids, lm = npz["ids"], npz["landmarks"]
+    id2lm = {i: lm[k] for k, i in enumerate(ids)}
+
+    df = pd.read_csv("training_data_scut.csv")
+    df = df[df["Image_ID"].isin(id2lm)].reset_index(drop=True)
+    df["sex"] = df["Image_ID"].str[1]
+    fn = [c for c in df.columns if c not in ("Image_ID", "Attractiveness", "sex")]
+
+    data = {}
+    for sex, name in [("F", "FEMALE"), ("M", "MALE")]:
+        sub = df[df["sex"] == sex].reset_index(drop=True)
+        raw = np.stack([id2lm[i] for i in sub["Image_ID"]])
+        data[name] = dict(
+            y=sub["Attractiveness"].values,
+            Xr=sub[fn].fillna(sub[fn].mean()).values,
+            aligned=gpa(raw).reshape(len(sub), -1),
+        )
+
+    res = {n: {"ratio": [], "pca": [], "pls": []} for n in ("FEMALE", "MALE")}
+    for rs in tqdm(seeds, desc="seeds"):
+        for name in ("FEMALE", "MALE"):
+            d = data[name]
+            y, Xr, aligned = d["y"], d["Xr"], d["aligned"]
+            oof = {k: np.zeros(len(y)) for k in ("ratio", "pca", "pls")}
+            for tr, te in tqdm(KFold(5, shuffle=True, random_state=rs).split(np.arange(len(y))),
+                               total=5, desc=f"{name} folds", leave=False):
+                mean_tr = aligned[tr].mean(axis=0)
+                pca = PCA(n_components=k_pca, random_state=rs).fit(aligned[tr])
+                pls = PLSRegression(n_components=k_pls).fit(aligned[tr], y[tr])
+
+                def build(proj, idx):
+                    avg = np.linalg.norm(aligned[idx] - mean_tr, axis=1, keepdims=True)
+                    return np.hstack([Xr[idx], avg, proj.transform(aligned[idx])])
+
+                oof["ratio"][te] = _fit_xgb(Xr[tr], y[tr], Xr[te], rs)
+                oof["pca"][te] = _fit_xgb(build(pca, tr), y[tr], build(pca, te), rs)
+                oof["pls"][te] = _fit_xgb(build(pls, tr), y[tr], build(pls, te), rs)
+
+            for key in ("ratio", "pca", "pls"):
+                res[name][key].append(r2_score(y, oof[key]))
+
+    for name in ("FEMALE", "MALE"):
+        r = {k: np.array(v) for k, v in res[name].items()}
+        d_pca, d_pls = r["pca"] - r["ratio"], r["pls"] - r["ratio"]
+        gap = r["pls"] - r["pca"]
+        sd = lambda a: a.std(ddof=1) if len(a) > 1 else 0.0
+        print(f"\n=== {name}  (k_pca={k_pca}, k_pls={k_pls}, {len(seeds)} seeds) ===")
+        print(f"  ratios only : R2 = {r['ratio'].mean():.3f} +/- {sd(r['ratio']):.3f}")
+        print(f"  + PCA shape : R2 = {r['pca'].mean():.3f} +/- {sd(r['pca']):.3f}"
+              f"   d vs ratios = {d_pca.mean():+.4f}")
+        print(f"  + PLS shape : R2 = {r['pls'].mean():.3f} +/- {sd(r['pls']):.3f}"
+              f"   d vs ratios = {d_pls.mean():+.4f}")
+        print(f"  PLS - PCA   : {gap.mean():+.4f} +/- {sd(gap):.4f}")
+
+
+def _shape_oof_r2(d, rs, make_proj):
+    """
+    Honest 5-fold OOF R2 for ratios (+ averageness + shape projection) on one sex,
+    one seed. make_proj(X_train, y_train) returns a fitted projector with .transform
+    (PCA or PLS), or None for the ratios-only baseline. The projector is refit on
+    each fold's TRAIN split, so nothing leaks — mandatory for PLS.
+    """
+    y, Xr, aligned = d["y"], d["Xr"], d["aligned"]
+    oof = np.zeros(len(y))
+    for tr, te in tqdm(KFold(5, shuffle=True, random_state=rs).split(np.arange(len(y))),
+                       total=5, desc="folds", leave=False):
+        mean_tr = aligned[tr].mean(axis=0)
+        proj = make_proj(aligned[tr], y[tr])
+
+        def build(idx):
+            if proj is None:
+                return Xr[idx]
+            avg = np.linalg.norm(aligned[idx] - mean_tr, axis=1, keepdims=True)
+            return np.hstack([Xr[idx], avg, proj.transform(aligned[idx])])
+
+        oof[te] = _fit_xgb(build(tr), y[tr], build(te), rs)
+    return r2_score(y, oof)
+
+
+def run_pls_k_sweep(k_list=(6, 8, 10, 12, 15), seeds=RS, include_ref=True):
+    """
+    Sweep the PLS component count to find where OOF R2 stops paying.
+
+    For each k in k_list, reports honest 10-seed 5-fold OOF R2 of ratios + PLS(k)
+    shape per sex. With include_ref=True, ratios-only and PCA(15) are computed once
+    as reference lines (set False to skip them when you already have those numbers).
+    Because PLS orders axes by relevance, you can push k for R2 and still interpret
+    only the leading axes.
+    """
+    npz = np.load("landmarks_scut.npz", allow_pickle=True)
+    ids, lm = npz["ids"], npz["landmarks"]
+    id2lm = {i: lm[k] for k, i in enumerate(ids)}
+
+    df = pd.read_csv("training_data_scut.csv")
+    df = df[df["Image_ID"].isin(id2lm)].reset_index(drop=True)
+    df["sex"] = df["Image_ID"].str[1]
+    fn = [c for c in df.columns if c not in ("Image_ID", "Attractiveness", "sex")]
+
+    data = {}
+    for sex, name in [("F", "FEMALE"), ("M", "MALE")]:
+        sub = df[df["sex"] == sex].reset_index(drop=True)
+        raw = np.stack([id2lm[i] for i in sub["Image_ID"]])
+        data[name] = dict(
+            y=sub["Attractiveness"].values,
+            Xr=sub[fn].fillna(sub[fn].mean()).values,
+            aligned=gpa(raw).reshape(len(sub), -1),
+        )
+
+    # Reference lines (ratios only, PCA(15)) — computed once, unless skipped.
+    ref = {n: {"ratio": [], "pca15": []} for n in ("FEMALE", "MALE")}
+    if include_ref:
+        for rs in tqdm(seeds, desc="reference seeds"):
+            for name in ("FEMALE", "MALE"):
+                ref[name]["ratio"].append(
+                    _shape_oof_r2(data[name], rs, lambda Xt, yt: None))
+                ref[name]["pca15"].append(
+                    _shape_oof_r2(data[name], rs,
+                                  lambda Xt, yt, rs=rs: PCA(15, random_state=rs).fit(Xt)))
+
+    # PLS sweep.
+    sweep = {n: {k: [] for k in k_list} for n in ("FEMALE", "MALE")}
+    for k in tqdm(k_list, desc="k_pls"):
+        for rs in tqdm(seeds, desc=f"k={k} seeds", leave=False):
+            for name in ("FEMALE", "MALE"):
+                sweep[name][k].append(
+                    _shape_oof_r2(data[name], rs,
+                                  lambda Xt, yt, k=k: PLSRegression(k).fit(Xt, yt)))
+
+    sd = lambda a: a.std(ddof=1) if len(a) > 1 else 0.0
+    for name in ("FEMALE", "MALE"):
+        print(f"\n=== {name}  ({len(seeds)} seeds) ===")
+        rt = np.array(ref[name]["ratio"]) if include_ref else None
+        if include_ref:
+            pc = np.array(ref[name]["pca15"])
+            print(f"  ratios only : R2 = {rt.mean():.3f} +/- {sd(rt):.3f}")
+            print(f"  + PCA(15)   : R2 = {pc.mean():.3f} +/- {sd(pc):.3f}"
+                  f"   d = {(pc - rt).mean():+.4f}")
+        for k in k_list:
+            v = np.array(sweep[name][k])
+            dtxt = f"   d = {(v - rt).mean():+.4f}" if include_ref else ""
+            print(f"  + PLS({k:>2})   : R2 = {v.mean():.3f} +/- {sd(v):.3f}{dtxt}")
 
 
 def interprete_shape_axes(index, bundle):
