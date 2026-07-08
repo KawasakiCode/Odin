@@ -27,10 +27,16 @@ IRIS_DARK_LUMA = 30
 _LUMA_BGR = np.array([0.114, 0.587, 0.299])
 
 
+def _region_mask(shape, polygons):
+    """Binary (0/255) mask with the given polygon(s) filled in."""
+    mask = np.zeros(shape[:2], dtype=np.uint8)
+    cv2.fillPoly(mask, polygons, 255)
+    return mask
+
+
 def _collect_pixels(img_bgr, polygons):
     """Return an Nx3 float array of the BGR pixels inside the given polygon(s)."""
-    mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
-    cv2.fillPoly(mask, polygons, 255)
+    mask = _region_mask(img_bgr.shape, polygons)
     return img_bgr[mask == 255].astype(np.float64)
 
 
@@ -48,6 +54,43 @@ def laplacian_texture(img_bgr, polygon):
     lap = cv2.Laplacian(gray, cv2.CV_64F)
     vals = lap[mask == 255]
     return float(vals.var()) if vals.size else float("nan")
+
+
+def chroma_unevenness(img_bgr, polygons):
+    """
+    Std of the CIELab a* (redness) and b* (yellow) channels inside the region(s).
+
+    Pigmentation and blotchiness show up as colour that *wanders* across
+    otherwise uniform skin, so the spread — not the mean — is the signal.
+    Measured in colour space it is largely independent of resolution/focus
+    (unlike the Laplacian). OpenCV's 8-bit a*/b* are the CIELab values offset by
+    +128 (scale 1:1), so the std is already in CIELab units. Returns (a_std,
+    b_std), or (nan, nan) if the region is empty.
+    """
+    lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+    px = lab[_region_mask(img_bgr.shape, polygons) == 255].astype(np.float64)
+    if px.size == 0:
+        return (float("nan"), float("nan"))
+    return (float(px[:, 1].std()), float(px[:, 2].std()))
+
+
+def spot_burden(img_bgr, polygons, face_width):
+    """
+    Localised redness-spot energy inside the region(s) — an acne/blemish proxy.
+
+    A difference-of-Gaussians band-passes the a* (redness) channel to blemish
+    scale, rejecting both fine pores (too high-frequency) and lighting gradients
+    (too low). The Gaussian widths are tied to face width so the detector finds
+    the same physical spot size at any image resolution. The score is the mean
+    positive DoG response over the region (0 if the skin is clean).
+    """
+    a = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB).astype(np.float64)[:, :, 1]
+    sigma_small = max(1.0, 0.006 * face_width)
+    sigma_large = max(sigma_small * 3.0, 0.02 * face_width)
+    dog = cv2.GaussianBlur(a, (0, 0), sigma_small) - cv2.GaussianBlur(a, (0, 0), sigma_large)
+    vals = dog[_region_mask(img_bgr.shape, polygons) == 255]
+    pos = vals[vals > 0]
+    return float(pos.mean()) if pos.size else 0.0
 
 
 def mean_color(img_bgr, polygons, dark_luma=None):
@@ -105,6 +148,8 @@ def appearance_features(img_bgr, landmarks):
     """
     reg = extract_regions(landmarks)
 
+    cheeks = [reg["left_cheek"], reg["right_cheek"]]
+
     # Skin texture: single value, mean Laplacian variance over the cheeks.
     # (Forehead dropped: hair/bangs contaminate it on ~half the faces.)
     skin_texture = np.nanmean([
@@ -112,12 +157,19 @@ def appearance_features(img_bgr, landmarks):
         laplacian_texture(img_bgr, reg["right_cheek"]),
     ])
 
+    # Skin colour-unevenness (pigmentation/blotchiness) and localised redness
+    # spots (acne) over the same cheek patches. Spot scale is tied to face width
+    # (outer face-oval landmarks 234 <-> 454) so it is resolution-independent.
+    skin_a_std, skin_b_std = chroma_unevenness(img_bgr, cheeks)
+    face_width = abs(float(landmarks[454][0]) - float(landmarks[234][0]))
+    skin_spot_burden = spot_burden(img_bgr, cheeks, face_width)
+
     lips_rgb = mean_color(img_bgr, [reg["lips"]])
     # Pool both irises into one eye colour, skipping pupil-dark pixels.
     eye_rgb = mean_color(img_bgr, [reg["left_iris"], reg["right_iris"]],
                          dark_luma=IRIS_DARK_LUMA)
     # Skin colour pools the same clean cheek patches used for texture.
-    skin_rgb = mean_color(img_bgr, [reg["left_cheek"], reg["right_cheek"]])
+    skin_rgb = mean_color(img_bgr, cheeks)
 
     # Facial-contrast features (Russell et al.), computed in CIELab so the
     # luminance (L*) and redness (a*) differences are perceptually meaningful.
@@ -140,6 +192,9 @@ def appearance_features(img_bgr, landmarks):
 
     return {
         "skin_texture": float(skin_texture),
+        "skin_a_std": skin_a_std,
+        "skin_b_std": skin_b_std,
+        "skin_spot_burden": skin_spot_burden,
         "lips_r": lips_rgb[0], "lips_g": lips_rgb[1], "lips_b": lips_rgb[2],
         "eye_r": eye_rgb[0], "eye_g": eye_rgb[1], "eye_b": eye_rgb[2],
         "skin_r": skin_rgb[0], "skin_g": skin_rgb[1], "skin_b": skin_rgb[2],

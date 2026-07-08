@@ -25,6 +25,15 @@ MODEL_PATHS = {
     "female": PROJECT_ROOT / "models" / "model_female.joblib",
 }
 
+# Force strictly single-threaded execution. These cap the BLAS/OpenMP pools that
+# numpy/scipy/sklearn use for the SVDs in GPA and PCA, and MUST be set before
+# numpy is imported. XGBoost is pinned separately via n_jobs=1. Slower, but never
+# oversubscribes the machine.
+import os
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+    os.environ[_v] = "1"
+
 import numpy as np
 import pandas as pd
 import joblib
@@ -36,10 +45,14 @@ from scipy.linalg import orthogonal_procrustes
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold, train_test_split
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from tqdm import tqdm
 import xgboost as xgb
 
 N_PCA = 15
 RS = [42, 45, 33, 12, 63, 67, 83, 23, 98, 10]
+
+# The colour-unevenness / spot descriptors whose marginal value we test.
+SKIN_FEATURES = ["skin_a_std", "skin_b_std", "skin_spot_burden"]
 
 
 def center_scale(X):
@@ -74,6 +87,98 @@ def xgb_oof(X, y, rs):
         m.fit(Xt, yt, eval_set=[(Xv, yv)], verbose=False)
         oof[te] = m.predict(X[te])
     return oof
+
+def _fit_xgb(Xtr, ytr, Xte, rs):
+    """Fit one XGB (train.py params, early stopping) and predict Xte."""
+    Xt, Xv, yt, yv = train_test_split(Xtr, ytr, test_size=0.2, random_state=rs)
+    # Strictly single-threaded (n_jobs=1) so it never oversubscribes the machine
+    # (train.py's own params are otherwise matched).
+    m = xgb.XGBRegressor(n_estimators=1000, learning_rate=0.05, max_depth=4,
+                         subsample=0.8, colsample_bytree=0.7, reg_lambda=2,
+                         early_stopping_rounds=50, random_state=rs, n_jobs=1)
+    m.fit(Xt, yt, eval_set=[(Xv, yv)], verbose=False)
+    return m.predict(Xte)
+
+
+def run_skin_dr2():
+    """
+    Marginal ΔR² of the skin colour-unevenness / spot features.
+
+    For each of the RS seeds, two full models (ratios + averageness + shape-PCA)
+    are trained with 5-fold OOF — one WITH the three skin features, one WITHOUT —
+    sharing the same folds and the same per-fold shape model, so the only
+    difference is those three columns. Reports mean ± std (ddof=1, sample) of the
+    paired ΔR² over the 10 seeds, per sex.
+    """
+    # Read each archive member ONCE — npz[...] is a lazy loader that re-reads and
+    # re-decompresses the whole array on every access, so indexing it inside the
+    # loop would reload ~40 MB per iteration and blow up memory.
+    npz = np.load("landmarks_scut.npz", allow_pickle=True)
+    ids = npz["ids"]
+    lm = npz["landmarks"]  # (N, 478, 2), loaded once
+    id2lm = {i: lm[k] for k, i in tqdm(enumerate(ids), total=len(ids),
+                                       desc="index landmarks")}
+
+    df = pd.read_csv("training_data_scut.csv")
+    df = df[df["Image_ID"].isin(id2lm)].reset_index(drop=True)
+    df["sex"] = df["Image_ID"].str[1]
+
+    fn_all = [c for c in df.columns if c not in ("Image_ID", "Attractiveness", "sex")]
+    fn_no = [c for c in fn_all if c not in SKIN_FEATURES]
+    missing = [c for c in SKIN_FEATURES if c not in fn_all]
+    if missing:
+        raise SystemExit(f"CSV is missing {missing} — delete/regenerate "
+                         "training_data_scut.csv so the skin features are present.")
+
+    # Precompute per sex once (GPA alignment is label-free, seed-independent).
+    data = {}
+    for sex, name in tqdm([("F", "FEMALE"), ("M", "MALE")],
+                          desc="GPA align per sex"):
+        sub = df[df["sex"] == sex].reset_index(drop=True)
+        raw = np.stack([id2lm[i] for i in sub["Image_ID"]])
+        data[name] = dict(
+            y=sub["Attractiveness"].values,
+            Xall=sub[fn_all].fillna(sub[fn_all].mean()).values,
+            Xno=sub[fn_no].fillna(sub[fn_no].mean()).values,
+            aligned=gpa(raw).reshape(len(sub), -1),
+        )
+
+    withs = {"FEMALE": [], "MALE": []}
+    withouts = {"FEMALE": [], "MALE": []}
+    deltas = {"FEMALE": [], "MALE": []}
+
+    for rs in tqdm(RS, desc="seeds"):
+        for name in tqdm(("FEMALE", "MALE"), desc=f"seed {rs}", leave=False):
+            d = data[name]
+            y, aligned = d["y"], d["aligned"]
+            oof_w, oof_n = np.zeros(len(y)), np.zeros(len(y))
+            for tr, te in tqdm(KFold(5, shuffle=True, random_state=rs).split(np.arange(len(y))),
+                               total=5, desc=f"{name} folds", leave=False):
+                mean_tr = aligned[tr].mean(axis=0)
+                pca = PCA(n_components=N_PCA, random_state=rs).fit(aligned[tr])
+
+                def aug(X, idx):
+                    avg = np.linalg.norm(aligned[idx] - mean_tr, axis=1, keepdims=True)
+                    return np.hstack([X[idx], avg, pca.transform(aligned[idx])])
+
+                oof_w[te] = _fit_xgb(aug(d["Xall"], tr), y[tr], aug(d["Xall"], te), rs)
+                oof_n[te] = _fit_xgb(aug(d["Xno"], tr), y[tr], aug(d["Xno"], te), rs)
+
+            r2w, r2n = r2_score(y, oof_w), r2_score(y, oof_n)
+            withs[name].append(r2w)
+            withouts[name].append(r2n)
+            deltas[name].append(r2w - r2n)
+        print(f"  seed {rs}: "
+              f"F Δ={deltas['FEMALE'][-1]:+.4f}  M Δ={deltas['MALE'][-1]:+.4f}")
+
+    for name in ("FEMALE", "MALE"):
+        w, n, dl = (np.array(withs[name]), np.array(withouts[name]),
+                    np.array(deltas[name]))
+        print(f"\n=== {name}: skin-feature ΔR² over {len(RS)} seeds ===")
+        print(f"  without skin : R2 = {n.mean():.3f} ± {n.std(ddof=1):.3f}")
+        print(f"  with skin    : R2 = {w.mean():.3f} ± {w.std(ddof=1):.3f}")
+        print(f"  ΔR²          : {dl.mean():+.4f} ± {dl.std(ddof=1):.4f}")
+
 
 def interprete_shape_axes(index, bundle):
     pca = bundle["shape_pca"]

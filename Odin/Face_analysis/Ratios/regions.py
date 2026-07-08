@@ -20,13 +20,13 @@ LIPS_OUTER = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409,
 LEFT_IRIS  = [469, 470, 471, 472]
 RIGHT_IRIS = [474, 475, 476, 477]
 
-# Cheek skin clusters, convex-hulled so landmark order doesn't matter. Grown
-# UP onto the zygomatic/infraorbital cheekbone (clean skin) rather than down
-# toward the beard, nasolabial fold and jaw. Lateral edge at 116/123 (left),
-# lower bound at 205/206/36/101, top bound under the eye at 117/118/119/50.
-# RIGHT_* mirror LEFT_*.
-LEFT_CHEEK  = [116, 123, 117, 118, 119, 50, 101, 36, 205, 206]
-RIGHT_CHEEK = [345, 352, 346, 347, 348, 280, 330, 266, 425, 426]
+# Cheek skin clusters, convex-hulled so landmark order doesn't matter. Enlarged
+# to sample enough skin for the colour-unevenness / spot descriptors: lateral
+# edge at 116/123/111 (left), under-eye top at 117/118/119/50, and pushed down
+# onto the mid/lower cheek with 207/187/147 (still above the beard/jawline and
+# medial to the nasolabial fold). RIGHT_* mirror LEFT_*.
+LEFT_CHEEK  = [116, 123, 111, 117, 118, 119, 50, 101, 36, 205, 206, 207, 187, 147]
+RIGHT_CHEEK = [345, 352, 340, 346, 347, 348, 280, 330, 266, 425, 426, 427, 411, 376]
 
 
 def _poly(landmarks, idxs, hull=False):

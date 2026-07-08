@@ -41,6 +41,15 @@ predictor itself:
   add a small but consistent **+0.013 ± 0.005 R²** (averaged over 10 random seeds,
   per sex) over the isolated ratios — modest, but the sign never flips across seeds,
   so it's signal rather than noise.
+- **Hand-crafted skin descriptors barely move the needle.** To test whether the
+  "skin quality" part of the ceiling gap is recoverable *by design*, I added
+  colour-unevenness (CIELab a\*/b\* spread → pigmentation/blotchiness) and a
+  band-pass blemish detector. Under the same 10-seed paired ablation they add only
+  **+0.006 (female) / +0.005 (male) R²** — a real lift (the sign holds), but
+  negligible, and for males the seed-to-seed spread is about as large as the effect
+  itself. The takeaway is the interesting part: the gap to a deep embedding is
+  **not** mostly nameable skin texture waiting to be measured — it's un-interpretable
+  gestalt.
 - **Interpretable geometry leaves ~0.14 R² on the table vs. a deep embedding.** A
   frozen FaceNet-512 embedding + Ridge reaches ~0.75 R², and the deep-CNN benchmark
   ~0.81 (see *How far this is from the ceiling* below). The hand-crafted model trades
@@ -93,7 +102,7 @@ add +0.013 ± 0.005 R² over 10 random seeds — small, but the sign never flips
 ```
 photo ──► MediaPipe FaceLandmarker (478 landmarks)
       ──► geometric ratios   (thirds, fifths, golden, FWHR, jaw, EAR, …)
-      ──► appearance         (skin texture, lip/eye/skin colour, CIELab contrasts)
+      ──► appearance         (skin texture + colour-unevenness + blemish, lip/eye/skin colour, CIELab contrasts)
       ──► Procrustes shape   (averageness + 15 shape-PCA components)
       ──► XGBoost regressor  ──► 1–10 score (+ optional male presentation boost)
 ```
@@ -269,11 +278,14 @@ How to read it:
   ~**0.75 R²**, about **94% of the deep-CNN ceiling**. Most of the extractable
   signal lives in a generic face representation, not in attractiveness-specific
   training.
-- The **interpretable features leave ~0.13–0.14 R²** relative to that embedding.
-  That gap is the cost of interpretability: part is signal that *could* be
-  hand-crafted (skin quality/texture, hair, eyebrows), part is holistic "gestalt"
-  geometry and photographic confounds that don't reduce to nameable features. So the
-  realistic *explainable* ceiling sits **between 0.61 and 0.75**, not at 0.75.
+- The **interpretable features leave ~0.13–0.14 R²** relative to that embedding —
+  the cost of interpretability. I probed how much of that is recoverable by hand:
+  adding skin colour-unevenness and blemish descriptors (see *What this project is
+  really about*) closed only **~0.005** of it. So the gap is mostly holistic
+  "gestalt" geometry and photographic confounds that **don't reduce to nameable
+  features**, not unmeasured skin quality. The realistic *explainable* ceiling sits
+  **between 0.61 and 0.75** — and the skin-descriptor result suggests it's nearer the
+  low end.
 - The **male gap is slightly larger than the female gap**, and the embedding nearly
   erases the male/female difference (0.749 vs 0.759) that geometry alone could not —
   evidence that male attractiveness leans more on signal geometry cannot see.
