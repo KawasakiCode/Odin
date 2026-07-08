@@ -89,7 +89,7 @@ header h1 {
 
 .layout {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: 1fr 460px;
   gap: 20px;
   align-items: start;
 }
@@ -177,7 +177,10 @@ th {
   border-bottom: 1px solid var(--border);
 }
 td { padding: 6px 0; border-bottom: 1px solid var(--border); }
-td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.num, th.num {
+  text-align: right; font-variant-numeric: tabular-nums;
+  white-space: nowrap; padding-left: 14px;   /* breathing room between columns */
+}
 td.ideal { color: var(--muted); padding-left: 12px; }
 tr:last-child td { border-bottom: none; }
 

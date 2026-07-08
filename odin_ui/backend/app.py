@@ -157,6 +157,57 @@ IDEALS = {
     "ear_asymmetry": ("→ 0", "→ 0"),
 }
 
+# Human labels for the Procrustes shape axes, PER SEX (the two PCAs differ, so
+# male PC09 != female PC09). Derived from the deformation renders + the PC-vs-
+# ratio correlation table (procrustes_features.correlate_axes_with_ratios).
+# Cleanly-interpreted axes get real names; blended/weak ones are labelled
+# honestly by their dominant correlate or "holistic shape" — not over-claimed.
+SHAPE_LABELS = {
+    "female": {
+        "averageness": "Shape typicality",
+        "shape_pc_01": "Lower-face proportion",
+        "shape_pc_02": "Lower-face length & width",
+        "shape_pc_03": "Mouth & lip size",
+        "shape_pc_04": "Jaw slope & width",
+        "shape_pc_05": "Jaw contour",
+        "shape_pc_06": "Eye-spacing & jaw",
+        "shape_pc_07": "Facial width (fifths)",
+        "shape_pc_08": "Eye spacing / width",
+        "shape_pc_09": "Lower-face taper",
+        "shape_pc_10": "Face height / jaw",
+        "shape_pc_11": "Holistic shape",
+        "shape_pc_12": "Holistic shape",
+        "shape_pc_13": "Chin length",
+        "shape_pc_14": "Holistic shape",
+        "shape_pc_15": "Eye spacing",
+    },
+    "male": {
+        "averageness": "Shape typicality",
+        "shape_pc_01": "Jaw slope & lower-face",
+        "shape_pc_02": "Lower-face & canthal tilt",
+        "shape_pc_03": "Mouth & lip size",
+        "shape_pc_04": "Face height (golden)",
+        "shape_pc_05": "Eye-spacing & nose width",
+        "shape_pc_06": "Jaw contour",
+        "shape_pc_07": "Facial width (fifths)",
+        "shape_pc_08": "Chin split",
+        "shape_pc_09": "Lower-face taper",
+        "shape_pc_10": "Vertical thirds",
+        "shape_pc_11": "Eye openness / spacing",
+        "shape_pc_12": "Holistic shape",
+        "shape_pc_13": "Jaw taper & canthal",
+        "shape_pc_14": "Lip fullness",
+        "shape_pc_15": "Fifths / eye spacing",
+    },
+}
+
+
+def _label(k, sex):
+    """UI label for a feature key, using the per-sex shape names for shape axes."""
+    if k in SHAPE_LABELS.get(sex, {}):
+        return SHAPE_LABELS[sex][k]
+    return LABELS.get(k, k)
+
 
 def _num(v):
     """JSON-safe number: floats only, NaN/inf -> None."""
@@ -237,15 +288,31 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
     base, contribs = feature_contributions(model, X)
     score = male_boost(raw, model) if model.get("label") == "MALE" else raw
 
-    contrib_items = sorted(
-        ({"key": k,
-        "label": LABELS.get(k, k),
-        "value": _num(feats.get(k)),
+    idx = 0 if sex == "male" else 1
+    channel_keys = {"eye_r", "eye_g", "eye_b", "skin_r", "skin_g", "skin_b",
+                    "lips_r", "lips_g", "lips_b"}
+    items = [{
+        "key": k,
+        "label": _label(k, sex),
+        # Only show a value where an ideal exists to read it against; shape axes
+        # and colours are abstract, so value stays blank like the ideal.
+        "value": _num(feats.get(k)) if k in IDEALS else None,
+        "ideal": IDEALS[k][idx] if k in IDEALS else None,
         "contribution": round(float(c), 3),
-        "landmarks": RATIO_LANDMARKS.get(k, [])}
-        for k, c in contribs.items()),
-        key=lambda d: abs(d["contribution"]), reverse=True,
-    )
+        "landmarks": RATIO_LANDMARKS.get(k, []),
+    } for k, c in contribs.items() if k not in channel_keys]
+
+    # Colour channels are meaningless individually -> sum each colour's 3 SHAP
+    # contributions into one grouped "X colour" impact (SHAP is additive).
+    for prefix, label in (("eye", "Eye colour"), ("skin", "Skin colour"),
+                          ("lips", "Lip colour")):
+        total = sum(float(contribs.get(f"{prefix}_{ch}", 0.0)) for ch in "rgb")
+        items.append({"key": f"{prefix}_color", "label": label, "value": None,
+                      "ideal": None, "contribution": round(total, 3),
+                      "landmarks": []})
+
+    contrib_items = sorted(items, key=lambda d: abs(d["contribution"]),
+                           reverse=True)
 
     return {
         "width": w,

@@ -28,6 +28,7 @@ MODEL_PATHS = {
 import numpy as np
 import pandas as pd
 import joblib
+from shape_utils import shape_feature_matrix, load_landmarks
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -112,6 +113,49 @@ def run_interpretability_and_plot(sex):
         plt.close(fig)
 
     print(f"saved {n} axis plots -> {out_dir}")
+
+
+def correlate_axes_with_ratios(sex):
+    """
+    Name each shape axis objectively: for every face, correlate its PC score
+    (from the BUNDLE's shape model, so it matches shape_pc_01..15) against every
+    named ratio, and print the top-3 correlated ratios per axis alongside the
+    model's global (gain) importance for that axis. Sorted by importance, so the
+    axes the model actually pays for come first.
+    """
+    bundle = joblib.load(MODEL_PATHS[sex])
+    M, pca = bundle["shape_ref_mean"], bundle["shape_pca"]
+    imp = dict(zip(bundle["feature_names"], bundle["xgboost"].feature_importances_))
+
+    id2lm = load_landmarks()
+    df = pd.read_csv(Path(__file__).resolve().parent / "training_data_scut.csv")
+    letter = "M" if sex == "male" else "F"           # bundle uses word, CSV uses letter
+    df = df[df["Image_ID"].str[1] == letter]
+    df = df[df["Image_ID"].isin(id2lm)].reset_index(drop=True)
+
+    ids = df["Image_ID"].tolist()
+    raw = np.stack([id2lm[i] for i in ids]).astype(np.float64)
+    pc_scores = shape_feature_matrix(raw, M, pca)[:, 1:]   # drop averageness -> (n, 15)
+
+    ratio_cols = [c for c in df.columns
+                  if c not in ("Image_ID", "Attractiveness", "sex")]
+    R = df[ratio_cols].fillna(df[ratio_cols].mean()).values
+
+    rows = []
+    for k in range(pc_scores.shape[1]):
+        name = f"shape_pc_{k + 1:02d}"
+        corr = sorted(
+            ((c, np.corrcoef(pc_scores[:, k], R[:, j])[0, 1])
+             for j, c in enumerate(ratio_cols)),
+            key=lambda t: abs(t[1]), reverse=True)
+        top = ", ".join(f"{c} ({r:+.2f})" for c, r in corr[:3])
+        rows.append((name, imp.get(name, 0.0), top))
+
+    rows.sort(key=lambda r: r[1], reverse=True)   # most-important axis first
+    print(f"\n=== {sex}: shape axes (by model importance) ===")
+    print(f"{'axis':12} {'import':>7}   top-correlated ratios")
+    for name, im, top in rows:
+        print(f"{name:12} {im:7.3f}   {top}")
 
 
 def main(rs):

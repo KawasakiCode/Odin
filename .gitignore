@@ -12,3 +12,4 @@ tests.txt
 /odin_training/models
 /facenet_cnn/venv
 /facenet_cnn/embeddings_scut.npz
+/shape_axes_plots

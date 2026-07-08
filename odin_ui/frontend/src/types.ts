@@ -15,6 +15,7 @@ export interface ContribItem {
   key: string
   label: string
   value: number | null
+  ideal: string | null
   contribution: number
   landmarks: number[]
 }

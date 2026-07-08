@@ -86,6 +86,7 @@ export default function App() {
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
       ctx.fillStyle = highlight ? 'rgba(255, 205, 50, 0.98)' : 'rgba(0, 230, 150, 0.95)'
       for (const i of indices) {
+        if (i === 10) continue        // raw landmark 10 is replaced by the detected trichion below
         const p = result.landmarks[i]
         if (!p) continue
         ctx.beginPath()
@@ -94,16 +95,13 @@ export default function App() {
         ctx.stroke()
       }
 
-      // Detected trichion (corrected hairline) as a distinct magenta marker.
-      if (result.trichion) {
+      // Detected trichion (corrected hairline), drawn in place of raw landmark 10 —
+      // same colour/size as the other dots — only when the current view uses it.
+      if (result.trichion && indices.includes(10)) {
         const [tx, ty] = result.trichion
-        const tr = Math.max(3, Math.round(canvas.width / 130))
         ctx.beginPath()
-        ctx.arc(tx, ty, tr, 0, Math.PI * 2)
-        ctx.fillStyle = 'rgba(255, 60, 220, 0.95)'
+        ctx.arc(tx, ty, radius, 0, Math.PI * 2)
         ctx.fill()
-        ctx.lineWidth = Math.max(1, tr * 0.4)
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)'
         ctx.stroke()
       }
     }
@@ -202,6 +200,7 @@ export default function App() {
                     <tr>
                       <th>Feature</th>
                       <th className="num">Value</th>
+                      <th className="num">Ideal ({result.sex})</th>
                       <th className="num">Impact</th>
                     </tr>
                   </thead>
@@ -220,6 +219,7 @@ export default function App() {
                         >
                           <td>{r.label}</td>
                           <td className="num">{fmt(r.value)}</td>
+                          <td className="num ideal">{r.ideal ?? '—'}</td>
                           <td className="num">
                             <div className="impact">
                               <span className="impact-val" style={{ color }}>
