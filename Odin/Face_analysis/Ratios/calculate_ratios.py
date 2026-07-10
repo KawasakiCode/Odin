@@ -168,7 +168,6 @@ def fwhr(face_data):
     return biz_width / upper_face_height
 
 # Frontal jaw contour angle
-# TODO probably add this ratio to the side profile picture as gonial angle
 def frontal_jaw_contour_angle(face_data):
     """
     The frontal jaw contour angle measures the slope of the jawline

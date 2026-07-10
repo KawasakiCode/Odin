@@ -4,10 +4,6 @@ import type { AnalyzeResult } from './types'
 
 type Sex = 'male' | 'female'
 
-function fmt(value: number | null): string {
-  return value === null ? '—' : value.toFixed(3)
-}
-
 export default function App() {
   const [file, setFile] = useState<File | null>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
@@ -66,27 +62,51 @@ export default function App() {
       ctx.drawImage(img, 0, 0)
       if (!result || !showLandmarks) return
 
-      // Default = union of all landmarks any feature uses. Hover = just that
-      // feature's landmarks, drawn bigger/brighter.
-      let indices: number[]
-      let highlight = false
       const item = hovered ? result.contribs.find((r) => r.key === hovered) : undefined
-      if (item && item.landmarks.length) {
-        indices = item.landmarks
-        highlight = true
-      } else {
-        const used = new Set<number>()
-        result.contribs.forEach((r) => r.landmarks.forEach((i) => used.add(i)))
-        indices = [...used]
+
+      // Hovering a geometric ratio -> draw the ACTUAL lines that were measured
+      // (dark underlay for contrast, then the bright line, then endpoint dots).
+      if (item && item.lines.length) {
+        const lw = Math.max(2, Math.round(canvas.width / 320))
+        const dotR = Math.max(3, Math.round(canvas.width / 170))
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        for (const pass of [
+          { w: lw * 2.4, s: 'rgba(0, 0, 0, 0.5)' },
+          { w: lw, s: 'rgba(255, 205, 50, 0.97)' },
+        ]) {
+          ctx.lineWidth = pass.w
+          ctx.strokeStyle = pass.s
+          for (const seg of item.lines) {
+            ctx.beginPath()
+            seg.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])))
+            ctx.stroke()
+          }
+        }
+        ctx.fillStyle = 'rgba(255, 205, 50, 0.98)'
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
+        ctx.lineWidth = Math.max(1, dotR * 0.4)
+        for (const seg of item.lines) {
+          for (const p of seg) {
+            ctx.beginPath()
+            ctx.arc(p[0], p[1], dotR, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.stroke()
+          }
+        }
+        return
       }
 
-      const radius = Math.max(2, Math.round(canvas.width / (highlight ? 85 : 220)))
-      // Dark outline so the dots read on bright / white faces too.
+      // Default (or a feature with no geometry): faint union of every ratio's
+      // landmarks, with the corrected trichion in place of raw landmark 10.
+      const used = new Set<number>()
+      result.contribs.forEach((r) => r.landmarks.forEach((i) => used.add(i)))
+      const radius = Math.max(2, Math.round(canvas.width / 220))
       ctx.lineWidth = Math.max(1, radius * 0.5)
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
-      ctx.fillStyle = highlight ? 'rgba(255, 205, 50, 0.98)' : 'rgba(0, 230, 150, 0.95)'
-      for (const i of indices) {
-        if (i === 10) continue        // raw landmark 10 is replaced by the detected trichion below
+      ctx.fillStyle = 'rgba(0, 230, 150, 0.95)'
+      for (const i of used) {
+        if (i === 10) continue
         const p = result.landmarks[i]
         if (!p) continue
         ctx.beginPath()
@@ -94,10 +114,7 @@ export default function App() {
         ctx.fill()
         ctx.stroke()
       }
-
-      // Detected trichion (corrected hairline), drawn in place of raw landmark 10 —
-      // same colour/size as the other dots — only when the current view uses it.
-      if (result.trichion && indices.includes(10)) {
+      if (result.trichion && used.has(10)) {
         const [tx, ty] = result.trichion
         ctx.beginPath()
         ctx.arc(tx, ty, radius, 0, Math.PI * 2)
@@ -193,48 +210,46 @@ export default function App() {
 
               <div className="metrics">
                 <h3>What drove the result{' '}
-                  <span className="hint">ranked by impact · hover to highlight landmarks</span>
+                  <span className="hint">green = ideal · hover a ratio to see it measured on the photo</span>
                 </h3>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Feature</th>
-                      <th className="num">Value</th>
-                      <th className="num">Ideal ({result.sex})</th>
-                      <th className="num">Impact</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.contribs.map((r) => {
-                      const maxAbs = Math.abs(result.contribs[0]?.contribution || 1) || 1
-                      const pct = Math.min(100, (Math.abs(r.contribution) / maxAbs) * 100)
-                      const pos = r.contribution >= 0
-                      const color = pos ? 'var(--accent)' : '#ff6b6b'
-                      return (
-                        <tr
-                          key={r.key}
-                          className={hovered === r.key ? 'hl' : ''}
-                          onMouseEnter={() => setHovered(r.key)}
-                          onMouseLeave={() => setHovered((h) => (h === r.key ? null : h))}
-                        >
-                          <td>{r.label}</td>
-                          <td className="num">{fmt(r.value)}</td>
-                          <td className="num ideal">{r.ideal ?? '—'}</td>
-                          <td className="num">
-                            <div className="impact">
-                              <span className="impact-val" style={{ color }}>
-                                {pos ? '+' : ''}{r.contribution.toFixed(2)}
-                              </span>
-                              <span className="impact-bar">
-                                <span style={{ width: `${pct}%`, background: color }} />
-                              </span>
+                <div className="ratio-list">
+                  {result.contribs.map((r) => {
+                    const pos = r.contribution >= 0
+                    return (
+                      <div
+                        key={r.key}
+                        className={'ratio-row' + (hovered === r.key ? ' hl' : '')}
+                        onMouseEnter={() => setHovered(r.key)}
+                        onMouseLeave={() => setHovered((h) => (h === r.key ? null : h))}
+                        title={r.ideal ? `Ideal (${result.sex}): ${r.ideal}` : undefined}
+                      >
+                        <div className="rr-label">
+                          <span className="rr-name">{r.label}</span>
+                          {r.value !== null && (
+                            <span className="rr-badge">{r.value}</span>
+                          )}
+                        </div>
+                        <div className="rr-bar">
+                          {r.bar && (
+                            <div className="grad-bar">
+                              <span
+                                className="grad-marker"
+                                data-status={r.bar.status}
+                                style={{ left: `${(r.bar.pos * 100).toFixed(1)}%` }}
+                              />
                             </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                          )}
+                        </div>
+                        <span
+                          className="rr-impact"
+                          style={{ color: pos ? 'var(--accent)' : '#ff6b6b' }}
+                        >
+                          {pos ? '+' : ''}{r.contribution.toFixed(2)}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </>
           ) : (

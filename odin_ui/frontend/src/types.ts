@@ -11,6 +11,11 @@ export interface ColorItem {
   hex: string | null
 }
 
+export interface RatioBar {
+  pos: number                 // 0..1 marker position on the ideal gradient
+  status: 'good' | 'warn' | 'bad'
+}
+
 export interface ContribItem {
   key: string
   label: string
@@ -18,6 +23,8 @@ export interface ContribItem {
   ideal: string | null
   contribution: number
   landmarks: number[]
+  bar: RatioBar | null
+  lines: number[][][]          // segments; each is a list of [x,y] points
 }
 
 export interface AnalyzeResult {

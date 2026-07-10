@@ -161,6 +161,163 @@ IDEALS = {
     "ear_asymmetry": ("→ 0", "→ 0"),
 }
 
+# Numeric ideal ranges per ratio, per sex, as (green_lo, green_hi, red_lo, red_hi):
+# green = ideal band, yellow between green and red bounds, red beyond. Derived from
+# the thresholds in calculate_ratios.py docstrings. Ratios in LOW_BETTER only have a
+# high side (lower is better); their green_lo/red_lo are ignored. Ratios not listed
+# (or with an "—" ideal) get no bar.
+LOW_BETTER = {"symmetry", "ear_asymmetry", "jaw_contour_deviation"}
+IDEAL_RANGES = {
+    "symmetry":                    ((0, 0.035, 0, 0.09),)   * 2,
+    "width_ratio_46":              ((0.44, 0.48, 0.40, 0.50),) * 2,
+    "height_ratio_36":             ((0.34, 0.38, 0.33, 0.40),) * 2,
+    "canthal_average":             ((3, 5, 0, 8), (5, 8, 2, 11)),
+    "fwhr":                        ((1.90, 2.05, 1.70, 2.20), (1.75, 1.90, 1.60, 2.05)),
+    "jaw_contour_deviation":       ((0, 15, 0, 25),) * 2,
+    "upper_third":                 ((0.29, 0.33, 0.26, 0.36), (0.275, 0.315, 0.245, 0.345)),
+    "middle_third":                ((0.285, 0.325, 0.255, 0.355), (0.304, 0.344, 0.274, 0.374)),
+    "lower_third":                 ((0.36, 0.41, 0.32, 0.45), (0.36, 0.405, 0.32, 0.44)),
+    "bizygomatic_bigonial_ratio":  ((1.05, 1.20, 1.00, 1.30), (1.10, 1.25, 1.00, 1.35)),
+    "facial_fifths":               ((4.7, 5.3, 4.5, 5.5),) * 2,
+    "inter_eye_ratio":             ((0.95, 1.15, 0.85, 1.25),) * 2,
+    "orbitonasal_ratio":           ((0.90, 1.10, 0.80, 1.20), (0.85, 1.05, 0.75, 1.15)),
+    "nasofacial_proportion":       ((0.23, 0.27, 0.20, 0.30),) * 2,
+    "naso_oral_ratio":             ((1.50, 1.62, 1.30, 1.75),) * 2,
+    "face_golden_ratio":           ((1.30, 1.40, 1.25, 1.45), (1.25, 1.35, 1.20, 1.40)),
+    "face_height_bigonial_width":  ((1.48, 1.65, 1.40, 1.72), (1.55, 1.68, 1.45, 1.75)),
+    "lip_vermilion_ratio":         ((1.40, 1.80, 1.20, 2.10),) * 2,
+    "lower_third_upper_split":     ((0.25, 0.35, 0.20, 0.40),) * 2,
+    "lower_third_lower_split":     ((0.65, 0.75, 0.60, 0.80),) * 2,
+    "stomion_canthus_ratio":       ((0.56, 0.68, 0.50, 0.75),) * 2,
+    "ear_avg":                     ((0.20, 0.25, 0.15, 0.32), (0.30, 0.35, 0.22, 0.42)),
+    "ear_asymmetry":               ((0, 0.03, 0, 0.10),) * 2,
+}
+
+
+def _lerp_pos(v, xs, ys):
+    """Piecewise-linear map of v through the (xs, ys) anchor points, clamped."""
+    if v <= xs[0]:
+        return ys[0]
+    for i in range(len(xs) - 1):
+        if v <= xs[i + 1]:
+            d = xs[i + 1] - xs[i]
+            t = (v - xs[i]) / d if d else 0.0
+            return ys[i] + t * (ys[i + 1] - ys[i])
+    return ys[-1]
+
+
+def _bar(key, value, sex):
+    """Marker position (0..1 on a red-yellow-green-yellow-red bar) + status for a
+    ratio value against its ideal range. None if the ratio has no numeric ideal."""
+    rng = IDEAL_RANGES.get(key)
+    if rng is None or value is None:
+        return None
+    glo, ghi, rlo, rhi = rng[0 if sex == "male" else 1]
+    v = float(value)
+    if key in LOW_BETTER:
+        xs = [0.0, ghi, rhi, rhi + (rhi - ghi + 1e-6)]
+        ys = [0.45, 0.58, 0.85, 0.97]
+        status = "good" if v <= ghi else ("warn" if v <= rhi else "bad")
+    else:
+        pad = (rhi - rlo) * 0.6
+        xs = [rlo - pad, rlo, glo, ghi, rhi, rhi + pad]
+        ys = [0.03, 0.15, 0.35, 0.65, 0.85, 0.97]
+        status = "good" if glo <= v <= ghi else ("warn" if rlo <= v <= rhi else "bad")
+    return {"pos": round(_lerp_pos(v, xs, ys), 4), "status": status}
+
+
+def ratio_lines(key, fd):
+    """Measurement line segments (pixel coords) for a ratio, so the UI can draw
+    what was actually computed on hover. Each segment is [[x1,y1],[x2,y2]]; mirrors
+    the constructions documented in calculate_ratios.py. [] for non-geometric keys."""
+    def P(k):
+        v = fd[k]
+        return [round(float(v[0]), 1), round(float(v[1]), 1)]
+
+    def MID(a, b):
+        va, vb = fd[a], fd[b]
+        return [round((float(va[0]) + float(vb[0])) / 2, 1),
+                round((float(va[1]) + float(vb[1])) / 2, 1)]
+
+    st = MID("upper_lip_bottom_center", "lower_lip_top_center")   # stomion
+
+    if key == "symmetry":                  # vertical axis of symmetry
+        mids = ["top_center_forehead", "glabella", "top_of_nose_bridge", "nose_tip",
+                "base_of_nose", "upper_lip_top_center", "chin"]
+        mx = round(sum(float(fd[k][0]) for k in mids) / len(mids), 1)
+        return [[[mx, round(float(fd["top_center_forehead"][1]), 1)],
+                 [mx, round(float(fd["chin"][1]), 1)]]]
+    if key == "width_ratio_46":            # IPD vs bizygomatic width
+        return [[P("left_pupil_center"), P("right_pupil_center")],
+                [P("left_zygomatic"), P("right_zygomatic")]]
+    if key == "height_ratio_36":           # eye-to-mouth vs total face height
+        return [[MID("left_pupil_center", "right_pupil_center"), st],
+                [P("top_center_forehead"), P("chin")]]
+    if key == "canthal_average":           # inner->outer canthus tilt line, per eye
+        return [[P("left_eye_inner_corner"), P("left_eye_outer_corner")],
+                [P("right_eye_inner_corner"), P("right_eye_outer_corner")]]
+    if key == "fwhr":                      # width vs upper-face height
+        return [[P("left_zygomatic"), P("right_zygomatic")],
+                [P("eyebrows_bottom"), P("upper_lip_top_center")]]
+    if key == "jaw_contour_deviation":     # jaw segment vs canthus-alare ref, both sides
+        return [[P("left_jaw_angle1"), P("chin")],
+                [P("left_eye_outer_corner"), P("left_alare_tip")],
+                [P("right_jaw_angle1"), P("chin")],
+                [P("right_eye_outer_corner"), P("right_alare_tip")]]
+    if key == "jaw_contour_jaw_slope":     # jaw segment (gonion -> chin), per side
+        return [[P("left_jaw_angle1"), P("chin")],
+                [P("right_jaw_angle1"), P("chin")]]
+    if key == "jaw_contour_canthus_alare_slope":   # canthus -> alare reference line
+        return [[P("left_eye_outer_corner"), P("left_alare_tip")],
+                [P("right_eye_outer_corner"), P("right_alare_tip")]]
+    if key in ("upper_third", "middle_third", "lower_third"):   # the third's height
+        top = {"upper_third": "top_center_forehead", "middle_third": "glabella",
+               "lower_third": "base_of_nose"}[key]
+        bot = {"upper_third": "glabella", "middle_third": "base_of_nose",
+               "lower_third": "chin"}[key]
+        return [[P(top), P(bot)]]
+    if key == "bizygomatic_bigonial_ratio":
+        return [[P("left_zygomatic"), P("right_zygomatic")],
+                [P("left_jaw_angle2"), P("right_jaw_angle2")]]
+    if key == "facial_fifths":
+        return [[P("left_zygomatic"), P("right_zygomatic")],
+                [P("left_eye_inner_corner"), P("left_eye_outer_corner")],
+                [P("right_eye_inner_corner"), P("right_eye_outer_corner")]]
+    if key == "inter_eye_ratio":
+        return [[P("left_eye_inner_corner"), P("right_eye_inner_corner")],
+                [P("left_eye_inner_corner"), P("left_eye_outer_corner")],
+                [P("right_eye_inner_corner"), P("right_eye_outer_corner")]]
+    if key == "orbitonasal_ratio":
+        return [[P("left_alare_tip"), P("right_alare_tip")],
+                [P("left_eye_inner_corner"), P("right_eye_inner_corner")]]
+    if key == "nasofacial_proportion":
+        return [[P("left_alare_tip"), P("right_alare_tip")],
+                [P("left_zygomatic"), P("right_zygomatic")]]
+    if key == "naso_oral_ratio":
+        return [[P("lip_left_outer"), P("lip_right_outer")],
+                [P("left_alare_tip"), P("right_alare_tip")]]
+    if key == "face_golden_ratio":
+        return [[P("top_center_forehead"), P("chin")],
+                [P("left_zygomatic"), P("right_zygomatic")]]
+    if key == "face_height_bigonial_width":
+        return [[P("top_center_forehead"), P("chin")],
+                [P("left_jaw_angle1"), P("right_jaw_angle1")]]
+    if key == "lip_vermilion_ratio":
+        return [[P("upper_lip_top_center"), P("upper_lip_bottom_center")],
+                [P("lower_lip_top_center"), P("lower_lip_bottom_center")]]
+    if key in ("lower_third_upper_split", "lower_third_lower_split"):
+        return [[P("base_of_nose"), st], [st, P("chin")]]
+    if key == "stomion_canthus_ratio":
+        return [[st, P("chin")], [st, P("left_eye_outer_corner")],
+                [st, P("right_eye_outer_corner")]]
+    if key in ("ear_avg", "ear_asymmetry"):
+        return [[P("left_upper_eyelid_center"), P("left_lower_eyelid_center")],
+                [P("left_eye_inner_corner"), P("left_eye_outer_corner")],
+                [P("right_upper_eyelid_center"), P("right_lower_eyelid_center")],
+                [P("right_eye_inner_corner"), P("right_eye_outer_corner")]]
+    return []
+
+
 # Human labels for the Procrustes shape axes, PER SEX (the two PCAs differ, so
 # male PC09 != female PC09). Derived from the deformation renders + the PC-vs-
 # ratio correlation table (procrustes_features.correlate_axes_with_ratios).
@@ -294,6 +451,8 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
         "ideal": IDEALS[k][idx] if k in IDEALS else None,
         "contribution": round(float(c), 3),
         "landmarks": RATIO_LANDMARKS.get(k, []),
+        "bar": _bar(k, feats.get(k), sex),
+        "lines": ratio_lines(k, face_data),
     } for k, c in contribs.items() if k not in channel_keys]
 
     # Colour channels are meaningless individually -> sum each colour's 3 SHAP
@@ -303,7 +462,7 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
         total = sum(float(contribs.get(f"{prefix}_{ch}", 0.0)) for ch in "rgb")
         items.append({"key": f"{prefix}_color", "label": label, "value": None,
                       "ideal": None, "contribution": round(total, 3),
-                      "landmarks": []})
+                      "landmarks": [], "bar": None, "lines": []})
 
     contrib_items = sorted(items, key=lambda d: abs(d["contribution"]),
                            reverse=True)
