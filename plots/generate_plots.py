@@ -25,7 +25,8 @@ MODELS = {"male": ROOT / "models" / "model_male.joblib",
 # Shape features (PLS) are built at train time, not stored in the CSV, so the
 # honest-OOF plot needs the same fit-per-fold helpers the trainer uses.
 sys.path.insert(0, str(ROOT / "odin_training"))
-from shape_utils import fit_shape_model, shape_feature_matrix, load_landmarks
+from shape_utils import fit_shape_model, shape_feature_matrix, load_landmarks, SHAPE_NAMES
+from train import NAMED_SHAPE   # deployed model keeps only the named shape axes
 
 plt.rcParams.update({"figure.dpi": 130, "font.size": 11, "axes.grid": True,
                      "grid.alpha": 0.25})
@@ -51,8 +52,8 @@ def plot_ceiling():
     labels = ["Hand-crafted\nfeatures\n(this project)",
               "Frozen FaceNet-512\nembedding + Ridge",
               "End-to-end CNN\n(SCUT benchmark)"]
-    male = [0.657, 0.749, 0.81]
-    female = [0.666, 0.759, 0.81]
+    male = [0.633, 0.749, 0.81]
+    female = [0.636, 0.759, 0.81]
     x = np.arange(len(labels)); w = 0.38
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.bar(x - w/2, male, w, label="Male", color=NAVY)
@@ -69,15 +70,15 @@ def plot_ceiling():
 
 
 # ---- 2. predicted vs actual (honest 5-fold OOF, full PLS model) ------------
-def oof(Xr, y, raw):
-    """5-fold OOF for the real model, matching train.py's cross_validate: ratios +
-    PLS shape refit on each train fold (so shape never sees the test labels), and
-    XGB early-stopped on a validation split carved from train."""
+def oof(Xr, y, raw, keep_idx):
+    """5-fold OOF for the DEPLOYED model, matching train.py's cross_validate: ratios
+    + PLS shape refit per train fold, keeping only the named shape columns
+    (keep_idx into SHAPE_NAMES), XGB early-stopped on a val split from train."""
     pred = np.zeros(len(y))
     for tr, te in KFold(5, shuffle=True, random_state=42).split(Xr):
         M, proj = fit_shape_model(raw[tr], y[tr])
-        Xtr = np.hstack([Xr.values[tr], shape_feature_matrix(raw[tr], M, proj)])
-        Xte = np.hstack([Xr.values[te], shape_feature_matrix(raw[te], M, proj)])
+        Xtr = np.hstack([Xr.values[tr], shape_feature_matrix(raw[tr], M, proj)[:, keep_idx]])
+        Xte = np.hstack([Xr.values[te], shape_feature_matrix(raw[te], M, proj)[:, keep_idx]])
         Xt, Xv, yt, yv = train_test_split(Xtr, y[tr], test_size=0.20, random_state=42)
         m = xgb.XGBRegressor(n_estimators=1000, learning_rate=0.05, max_depth=4,
                              subsample=0.8, colsample_bytree=0.7, reg_lambda=2,
@@ -91,12 +92,13 @@ def plot_calibration():
     id2lm = load_landmarks()
     fig, axes = plt.subplots(1, 2, figsize=(12, 5.4))
     for ax, sex, color in zip(axes, ("male", "female"), (NAVY, TEAL)):
+        keep_idx = [SHAPE_NAMES.index(c) for c in NAMED_SHAPE[sex.upper()]]
         sub = df[df["sex"] == sex.upper()[0]]
         sub = sub[sub["Image_ID"].isin(id2lm)].reset_index(drop=True)
         Xr = sub[FEATURES].fillna(sub[FEATURES].mean())
         y = sub["Attractiveness"].values
         raw = np.stack([id2lm[i] for i in sub["Image_ID"]]).astype(np.float64)
-        p = oof(Xr, y, raw)
+        p = oof(Xr, y, raw, keep_idx)
         r2 = 1 - np.sum((y - p) ** 2) / np.sum((y - y.mean()) ** 2)
         mae = np.mean(np.abs(y - p))
         ax.scatter(y, p, s=6, alpha=0.25, color=color)

@@ -26,6 +26,17 @@ RANDOM_STATE = 42
 # Anchor outputs to this file's folder so train.py works from any CWD.
 BASE = Path(__file__).resolve().parent
 
+# Final models keep ONLY shape axes that have an interpretable name (mirrors
+# odin_ui SHAPE_LABELS): the unnamed "Minor shape axis" PLS modes are dropped so
+# every feature in the deployed model is explainable. This costs a small, measured
+# amount of R² (the unnamed modes carry diffuse holistic signal) — a deliberate
+# interpretability-over-accuracy choice. The PLS basis is still fit at 25
+# components per fold; we simply don't feed the unnamed score columns to XGBoost.
+NAMED_SHAPE = {
+    "FEMALE": ["averageness"] + [f"shape_pls_{i:02d}" for i in (1, 2, 3, 4, 5, 6, 9)],
+    "MALE":   ["averageness"] + [f"shape_pls_{i:02d}" for i in (1, 2, 3, 5, 8, 11, 16)],
+}
+
 
 def load_features():
     """
@@ -46,12 +57,13 @@ def load_features():
     return prep(Xf, yf), prep(Xm, ym)
 
 
-def augment(X_ratios, raw, M, proj):
-    """Concatenate shape features (averageness + PLS axes) onto the ratio matrix,
-    using a shape model (M, proj) that was fit elsewhere (on the train split)."""
+def augment(X_ratios, raw, M, proj, label):
+    """Concatenate shape features onto the ratio matrix, keeping only the named
+    (interpretable) shape axes for this sex — see NAMED_SHAPE. The shape model
+    (M, proj) is fit elsewhere (on the train split)."""
     shp = pd.DataFrame(shape_feature_matrix(raw, M, proj),
                        columns=SHAPE_NAMES, index=X_ratios.index)
-    return pd.concat([X_ratios, shp], axis=1)
+    return pd.concat([X_ratios, shp[NAMED_SHAPE[label]]], axis=1)
 
 
 def report(name, fitted_model, X_test, y_test, feature_names):
@@ -81,7 +93,7 @@ def train_models(label, X_ratios, y, raw):
     only and applied to the test split, so the shape features never see the test
     labels. The exported bundle (see export_model) instead fits shape on all data.
     """
-    n_feat = X_ratios.shape[1] + len(SHAPE_NAMES)
+    n_feat = X_ratios.shape[1] + len(NAMED_SHAPE[label])
     print("\n" + "=" * 70)
     print(f"  {label}  ({len(X_ratios)} faces, {n_feat} features)")
     print("=" * 70)
@@ -91,8 +103,8 @@ def train_models(label, X_ratios, y, raw):
 
     # Shape model fit on TRAIN only, then applied to both splits.
     M, proj = fit_shape_model(raw[tr], y.iloc[tr].values)
-    X_train = augment(X_ratios.iloc[tr], raw[tr], M, proj)
-    X_test = augment(X_ratios.iloc[te], raw[te], M, proj)
+    X_train = augment(X_ratios.iloc[tr], raw[tr], M, proj, label)
+    X_test = augment(X_ratios.iloc[te], raw[te], M, proj, label)
     y_train, y_test = y.iloc[tr], y.iloc[te]
 
     # Early stopping needs a validation set carved from TRAIN only (never the
@@ -128,7 +140,7 @@ def export_model(label, X_ratios, y, raw, n_estimators):
     slug = label.lower().replace(" ", "_")
 
     M, proj = fit_shape_model(raw, y.values)
-    X = augment(X_ratios, raw, M, proj)
+    X = augment(X_ratios, raw, M, proj, label)
 
     xgb_full = xgb.XGBRegressor(
         n_estimators=n_estimators, learning_rate=0.05, max_depth=4,
@@ -169,8 +181,8 @@ def cross_validate(label, X_ratios, y, raw, n_splits=5):
     scores = {"r2": [], "mae": [], "rmse": []}
     for train_idx, test_idx in kf.split(X_ratios):
         M, proj = fit_shape_model(raw[train_idx], y.iloc[train_idx].values)
-        X_train = augment(X_ratios.iloc[train_idx], raw[train_idx], M, proj)
-        X_test = augment(X_ratios.iloc[test_idx], raw[test_idx], M, proj)
+        X_train = augment(X_ratios.iloc[train_idx], raw[train_idx], M, proj, label)
+        X_test = augment(X_ratios.iloc[test_idx], raw[test_idx], M, proj, label)
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
         X_tr, X_val, y_tr, y_val = train_test_split(
             X_train, y_train, test_size=0.20, random_state=RANDOM_STATE)

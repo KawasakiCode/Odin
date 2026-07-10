@@ -337,6 +337,238 @@ def run_pls_k_sweep(k_list=(6, 8, 10, 12, 15), seeds=RS, include_ref=True):
             print(f"  + PLS({k:>2})   : R2 = {v.mean():.3f} +/- {sd(v):.3f}{dtxt}")
 
 
+def _ablation_data():
+    """Per-sex (y, ratio matrix, GPA-aligned shapes) + the full 69-name column
+    list, shared by the LOO scan and the prune verifier."""
+    npz = np.load("landmarks_scut.npz", allow_pickle=True)
+    ids, lm = npz["ids"], npz["landmarks"]
+    id2lm = {i: lm[k] for k, i in enumerate(ids)}
+
+    df = pd.read_csv("training_data_scut.csv")
+    df = df[df["Image_ID"].isin(id2lm)].reset_index(drop=True)
+    df["sex"] = df["Image_ID"].str[1]
+    fn = [c for c in df.columns if c not in ("Image_ID", "Attractiveness", "sex")]
+    shape_cols = ["averageness"] + [f"shape_pls_{i:02d}" for i in range(1, 26)]
+
+    data = {}
+    for sex, name in [("F", "FEMALE"), ("M", "MALE")]:
+        sub = df[df["sex"] == sex].reset_index(drop=True)
+        raw = np.stack([id2lm[i] for i in sub["Image_ID"]])
+        data[name] = dict(
+            y=sub["Attractiveness"].values,
+            Xr=sub[fn].fillna(sub[fn].mean()).values,
+            aligned=gpa(raw).reshape(len(sub), -1),
+        )
+    return data, fn + shape_cols
+
+
+def _fold_frame(d, all_cols, idx, mean_tr, pls):
+    """Full augmented feature DataFrame (ratios + averageness + PLS axes) for the
+    given row indices, using a PLS already fit on this fold's train split."""
+    avg = np.linalg.norm(d["aligned"][idx] - mean_tr, axis=1, keepdims=True)
+    mat = np.hstack([d["Xr"][idx], avg, pls.transform(d["aligned"][idx])])
+    return pd.DataFrame(mat, columns=all_cols)
+
+
+def run_feature_ablation(seeds=(42, 45), threshold=0.0):
+    """
+    Leave-one-out feature importance by honest ΔR². Trains the full 69-feature
+    model, then re-trains dropping each feature in turn, all with 5-fold OOF and
+    per-fold PLS (no leakage). ΔR² = R2_full − R2_without_feature: >0 means the
+    feature helps (removing it hurts); <=0 means it is useless or harmful.
+
+    CAUTION: these are single-feature drops, so correlated features look more
+    removable than they are — use verify_pruned() before trusting a batch removal.
+    """
+    data, all_cols = _ablation_data()
+    result = {}
+    for name in ("FEMALE", "MALE"):
+        d = data[name]
+        y, n = d["y"], len(d["y"])
+        full_r2, feat_r2 = [], {c: [] for c in all_cols}
+        for rs in tqdm(seeds, desc=f"{name} seeds"):
+            oof_full = np.zeros(n)
+            oof_feat = {c: np.zeros(n) for c in all_cols}
+            for tr, te in tqdm(KFold(5, shuffle=True, random_state=rs).split(np.arange(n)),
+                               total=5, desc="folds", leave=False):
+                mean_tr = d["aligned"][tr].mean(0)
+                pls = PLSRegression(n_components=25).fit(d["aligned"][tr], y[tr])
+                Xtr = _fold_frame(d, all_cols, tr, mean_tr, pls)
+                Xte = _fold_frame(d, all_cols, te, mean_tr, pls)
+                oof_full[te] = _fit_xgb(Xtr, y[tr], Xte, rs)
+                for c in tqdm(all_cols, desc="features", leave=False):
+                    oof_feat[c][te] = _fit_xgb(Xtr.drop(columns=[c]), y[tr],
+                                               Xte.drop(columns=[c]), rs)
+            full_r2.append(r2_score(y, oof_full))
+            for c in all_cols:
+                feat_r2[c].append(r2_score(y, oof_feat[c]))
+
+        full_mean = float(np.mean(full_r2))
+        rows = []
+        for c in all_cols:
+            arr = np.array(feat_r2[c])
+            dr2 = full_mean - arr.mean()
+            sd = arr.std(ddof=1) if len(arr) > 1 else 0.0
+            rows.append((c, dr2, sd))
+        rows.sort(key=lambda t: t[1])                 # most removable first
+        result[name] = (full_mean, rows)
+
+        print(f"\n=== {name}: leave-one-out dR2  "
+              f"(full R2 = {full_mean:.4f}, {len(seeds)} seeds) ===")
+        print("  dR2 = R2_full - R2_without;  >0 helps, <=0 useless/harmful")
+        for c, dr2, sd in rows:
+            flag = "   <-- drop candidate" if dr2 <= threshold else ""
+            print(f"  {c:34} {dr2:+.4f} +/- {sd:.4f}{flag}")
+    return result
+
+
+def verify_pruned(drop_cols, seeds=RS):
+    """
+    Rigorous check on a batch removal: full vs pruned model, multi-seed 5-fold OOF
+    per sex. Prints R2 for both and the delta — if pruning is safe the delta is
+    ~0 (within noise); a clear negative means correlated features were removed.
+    """
+    data, all_cols = _ablation_data()
+    keep = [c for c in all_cols if c not in set(drop_cols)]
+    dropped = [c for c in drop_cols if c in all_cols]
+    print(f"dropping {len(dropped)} features: {dropped}")
+
+    for name in ("FEMALE", "MALE"):
+        d = data[name]
+        y, n = d["y"], len(d["y"])
+        full, pruned = [], []
+        for rs in tqdm(seeds, desc=f"{name} seeds"):
+            oof_f, oof_p = np.zeros(n), np.zeros(n)
+            for tr, te in KFold(5, shuffle=True, random_state=rs).split(np.arange(n)):
+                mean_tr = d["aligned"][tr].mean(0)
+                pls = PLSRegression(n_components=25).fit(d["aligned"][tr], y[tr])
+                Xtr = _fold_frame(d, all_cols, tr, mean_tr, pls)
+                Xte = _fold_frame(d, all_cols, te, mean_tr, pls)
+                oof_f[te] = _fit_xgb(Xtr, y[tr], Xte, rs)
+                oof_p[te] = _fit_xgb(Xtr[keep], y[tr], Xte[keep], rs)
+            full.append(r2_score(y, oof_f))
+            pruned.append(r2_score(y, oof_p))
+        f, p = np.array(full), np.array(pruned)
+        sd = lambda a: a.std(ddof=1) if len(a) > 1 else 0.0
+        print(f"\n=== {name}  ({len(keep)} kept / {len(dropped)} dropped) ===")
+        print(f"  full   : R2 = {f.mean():.4f} +/- {sd(f):.4f}")
+        print(f"  pruned : R2 = {p.mean():.4f} +/- {sd(p):.4f}   d = {(p - f).mean():+.4f}")
+
+
+# Shape axes flagged as non-contributing (LOO dR2 <= 0) from run_feature_ablation,
+# per sex. Only shape_pls_* axes — averageness and the hand-crafted ratios are
+# kept. NOTE male shape_pls_01 is here despite being the #1 gain-importance
+# feature: a single-drop artefact of correlated axes. run_shape_prune_test checks
+# whether removing the whole batch actually costs R2.
+FEMALE_SHAPE_DROP = [f"shape_pls_{i:02d}" for i in
+                     (14, 19, 20, 9, 10, 2, 16, 11, 7, 24, 3, 22, 21, 15)]
+MALE_SHAPE_DROP = [f"shape_pls_{i:02d}" for i in
+                   (6, 5, 13, 24, 14, 12, 7, 18, 4, 20, 21, 22, 17, 9, 10, 16,
+                    1, 25, 19, 23, 8)]
+
+
+def run_shape_prune_test(seeds=RS):
+    """
+    Full vs shape-pruned model, per sex, multi-seed 5-fold OOF.
+
+    'Pruned' drops the non-contributing shape_pls_* axes (FEMALE/MALE_SHAPE_DROP);
+    every hand-crafted ratio + averageness is kept, and the PLS basis is still fit
+    at 25 components per fold (only the flagged score COLUMNS are removed before
+    XGB). Prints R2 for both and the paired dR2 — if ~0, the black-box axes were
+    dead weight and can go; a clear negative means they were collectively carrying
+    signal (the correlated-feature trap).
+    """
+    data, all_cols = _ablation_data()
+    drop_by_sex = {"FEMALE": FEMALE_SHAPE_DROP, "MALE": MALE_SHAPE_DROP}
+    for name in ("FEMALE", "MALE"):
+        drop = [c for c in drop_by_sex[name] if c in all_cols]
+        keep = [c for c in all_cols if c not in set(drop)]
+        d = data[name]
+        y, n = d["y"], len(d["y"])
+        full, pruned = [], []
+        for rs in tqdm(seeds, desc=f"{name} seeds"):
+            oof_f, oof_p = np.zeros(n), np.zeros(n)
+            for tr, te in KFold(5, shuffle=True, random_state=rs).split(np.arange(n)):
+                mean_tr = d["aligned"][tr].mean(0)
+                pls = PLSRegression(n_components=25).fit(d["aligned"][tr], y[tr])
+                Xtr = _fold_frame(d, all_cols, tr, mean_tr, pls)
+                Xte = _fold_frame(d, all_cols, te, mean_tr, pls)
+                oof_f[te] = _fit_xgb(Xtr, y[tr], Xte, rs)
+                oof_p[te] = _fit_xgb(Xtr[keep], y[tr], Xte[keep], rs)
+            full.append(r2_score(y, oof_f))
+            pruned.append(r2_score(y, oof_p))
+        f, p = np.array(full), np.array(pruned)
+        sd = lambda a: a.std(ddof=1) if len(a) > 1 else 0.0
+        kept_shape = len([c for c in keep if c.startswith("shape_pls")])
+        print(f"\n=== {name}: dropped {len(drop)} shape axes, kept {kept_shape} "
+              f"({len(keep)} features total, {len(seeds)} seeds) ===")
+        print(f"  dropped: {sorted(drop)}")
+        print(f"  full  (69 feat) : R2 = {f.mean():.4f} +/- {sd(f):.4f}")
+        print(f"  pruned ({len(keep)} feat): R2 = {p.mean():.4f} +/- {sd(p):.4f}")
+        print(f"  dR2 (pruned - full): {(p - f).mean():+.4f} +/- {sd(p - f):.4f}")
+
+
+def run_shape_addback(seeds=(42, 45, 33)):
+    """
+    Forward-selection add-back: which dropped shape axes to restore, and in what
+    order. Starting from the pruned model (ratios + averageness + the kept axes),
+    each dropped axis is added back on its own and ranked by the R2 it RECOVERS —
+    the marginal value LOO hid, because here the correlated twins are already gone.
+    Then the axes are added cumulatively in that order so you can read off how few
+    restore most of the lost R2. Per-fold PLS frames are built once and reused, so
+    only cheap XGB refits repeat.
+    """
+    data, all_cols = _ablation_data()
+    drop_by_sex = {"FEMALE": FEMALE_SHAPE_DROP, "MALE": MALE_SHAPE_DROP}
+    for name in ("FEMALE", "MALE"):
+        d = data[name]
+        y, n = d["y"], len(d["y"])
+        dropped = [c for c in drop_by_sex[name] if c in all_cols]
+        base = [c for c in all_cols if c not in set(dropped)]
+
+        # Build the augmented frames once per (seed, fold); PLS is not refit again.
+        folds_by_seed = {}
+        for rs in tqdm(seeds, desc=f"{name} build folds"):
+            folds = []
+            for tr, te in KFold(5, shuffle=True, random_state=rs).split(np.arange(n)):
+                mean_tr = d["aligned"][tr].mean(0)
+                pls = PLSRegression(n_components=25).fit(d["aligned"][tr], y[tr])
+                folds.append((tr, te,
+                              _fold_frame(d, all_cols, tr, mean_tr, pls),
+                              _fold_frame(d, all_cols, te, mean_tr, pls)))
+            folds_by_seed[rs] = folds
+
+        def r2_of(cols):
+            r2s = []
+            for rs in seeds:
+                oof = np.zeros(n)
+                for tr, te, Xtr, Xte in folds_by_seed[rs]:
+                    oof[te] = _fit_xgb(Xtr[cols], y[tr], Xte[cols], rs)
+                r2s.append(r2_score(y, oof))
+            return float(np.mean(r2s))
+
+        base_r2, full_r2 = r2_of(base), r2_of(all_cols)
+        gains = [(c, r2_of(base + [c]) - base_r2)
+                 for c in tqdm(dropped, desc=f"{name} rank", leave=False)]
+        gains.sort(key=lambda t: t[1], reverse=True)
+
+        print(f"\n=== {name}: shape axis add-back ({len(seeds)} seeds) ===")
+        print(f"  pruned base ({len(base)} feat): R2 = {base_r2:.4f}")
+        print(f"  full  (69 feat)             : R2 = {full_r2:.4f}   gap = {full_r2 - base_r2:+.4f}")
+        print("  --- marginal R2 each dropped axis recovers over the pruned base ---")
+        for c, g in gains:
+            print(f"    {c:16} {g:+.4f}")
+
+        print("  --- cumulative (add back best-first; R2 exact, order approximate) ---")
+        cur, gap = list(base), (full_r2 - base_r2)
+        for i, (c, _) in enumerate(gains, 1):
+            cur.append(c)
+            r = r2_of(cur)
+            rec = (r - base_r2) / gap * 100 if gap else 0.0
+            mark = "   <-- within noise of full" if r >= full_r2 - 0.002 else ""
+            print(f"    +{i:2} {c:16}: R2 = {r:.4f}  ({rec:3.0f}% of gap){mark}")
+
+
 def _sex_shape_scores(sex):
     """
     Load the (retrained) bundle and this sex's training faces, and return
