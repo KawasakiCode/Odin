@@ -69,6 +69,9 @@ LABELS = {
     "ear_avg": "Eye aspect ratio (openness)",
     "ear_asymmetry": "Eye asymmetry",
     "skin_texture": "Skin texture (Laplacian var.)",
+    "skin_a_std": "Skin redness unevenness",
+    "skin_b_std": "Skin tone unevenness",
+    "skin_spot_burden": "Skin blemish / spot level",
     "eye_skin_luminance_contrast": "Eye–skin luminance contrast",
     "lip_skin_luminance_contrast": "Lip–skin luminance contrast",
     "lip_skin_redness_contrast": "Lip–skin redness contrast",
@@ -89,7 +92,8 @@ GEOM_KEYS = [
     "stomion_canthus_ratio", "ear_avg", "ear_asymmetry",
 ]
 APPEARANCE_KEYS = [
-    "skin_texture", "eye_skin_luminance_contrast", "lip_skin_luminance_contrast",
+    "skin_texture", "skin_a_std", "skin_b_std", "skin_spot_burden",
+    "eye_skin_luminance_contrast", "lip_skin_luminance_contrast",
     "lip_skin_redness_contrast", "eye_skin_redness_contrast", "facial_contrast_avg",
 ]
 
