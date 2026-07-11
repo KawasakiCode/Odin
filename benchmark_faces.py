@@ -13,6 +13,7 @@ so it's directly comparable to the CNNs. Writes benchmark_results.csv and prints
 per-group means + a correlation of image size vs each model's score.
 """
 import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import joblib
@@ -31,7 +32,7 @@ from Odin.main import build_features, add_shape_features, MODEL_PATHS
 import cnn_scorer
 
 MODELS = {sex: joblib.load(p) for sex, p in MODEL_PATHS.items()}
-IMG_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".jfif"}
+IMG_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".jfif", ".avif"}
 
 
 def infer_sex(s):
@@ -76,7 +77,7 @@ def analyze(path, sex):
     return w, h, odin, cnn
 
 
-def main(roots):
+def _run(roots):
     paths = sorted(p for root in roots for p in Path(root).rglob("*")
                    if p.is_file() and p.suffix.lower() in IMG_EXT)
     print(f"found {len(paths)} images across {len(roots)} root(s)")
@@ -86,8 +87,9 @@ def main(roots):
         sex = infer_sex(str(p))
         cat = infer_cat(str(p))
         if sex is None:
-            print(f"  SKIP (no sex in path): {p}")
-            continue
+            # e.g. the "attractive" folder = attractive MALE (counterpart to
+            # attractive_female); default a sexless folder to male.
+            sex = "male"
         try:
             w, h, odin, cnn = analyze(p, sex)
         except Exception as e:
@@ -134,6 +136,14 @@ def main(roots):
         sub = df.dropna(subset=[c])
         r = np.corrcoef(sub["megapixels"], sub[c])[0, 1] if len(sub) > 2 else float("nan")
         print(f"  {c:10} r = {r:+.3f}")
+
+
+def main(roots):
+    """Run the benchmark, sending all report output to benchmark_output.txt."""
+    txt = ROOT / "benchmark_output.txt"
+    with open(txt, "w", encoding="utf-8") as f, redirect_stdout(f):
+        _run(roots)
+    print(f"done -> {txt}  (+ benchmark_results.csv)")
 
 
 if __name__ == "__main__":

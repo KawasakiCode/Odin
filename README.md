@@ -318,6 +318,34 @@ How to read it:
   the earlier finding that male attractiveness leans harder on geometry — geometry
   the *right* shape features can finally capture.
 
+## Behaviour vs. the benchmark CNNs (out-of-distribution test)
+
+As a sanity check on how Odin behaves on faces it never trained on, I scored 60
+faces — 10 attractive / 10 average / 10 unattractive per sex, from the **Chicago
+Face Database** (average/unattractive) and web photos (attractive) — with Odin
+(raw prediction, no boost) **and** the three SCUT benchmark CNNs run via OpenCV's
+Caffe importer (AlexNet, ResNet-18, ResNeXt-50 — the ~0.81-R² models). All on the
+1–10 scale (`benchmark_faces.py`).
+
+- **All four models rank the tiers correctly** (attractive > average >
+  unattractive, both sexes). Odin generalises sensibly off its SCUT training
+  distribution.
+- **Odin discriminates the tiers *more* than the CNNs.** It separates the
+  attractive vs. unattractive means by **+2.50**, against **+1.78–1.89** for the
+  CNNs, and its overall spread is wider (range **5.6 / std 1.34** vs ~4.0 / ~1.0).
+  The CNNs compress toward the middle on unfamiliar faces (tail compression);
+  Odin keeps using the low end.
+- **Odin is systematically harsher, and the extra range is all at the bottom:**
+  the CNNs floor around 3.8–4.5, Odin goes down to 2.6. Whether that low end is
+  "right" is unknowable without true ratings — Odin may simply be over-harsh.
+
+Caveats: n = 10/tier, the tiers are my own binning (not rated), and it's all
+out-of-distribution — suggestive behaviour, not a benchmark. One confound worth
+noting: the attractive set were small web images while the CFD faces are all
+4.2 MP, so score correlates with image size (r ≈ −0.7 for *every* model) — but
+that's the dataset (attractiveness and resolution are inseparable here), not a
+resolution effect on the models.
+
 ## Importing the model into another project
 
 The `.joblib` bundle is **not** self-contained: a prediction is only valid if the
