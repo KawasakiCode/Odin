@@ -27,6 +27,12 @@ export interface ContribItem {
   lines: number[][][]          // segments; each is a list of [x,y] points
 }
 
+export interface Averageness {
+  z: number
+  category: string
+  percentile: number
+}
+
 export interface AnalyzeResult {
   width: number
   height: number
@@ -40,5 +46,6 @@ export interface AnalyzeResult {
   ratios: RatioItem[]
   appearance: RatioItem[]
   contribs: ContribItem[]
+  averageness: Averageness | null
   colors: ColorItem[]
 }

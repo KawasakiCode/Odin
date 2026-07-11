@@ -17,6 +17,9 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from statistics import NormalDist
+
+import numpy as np
 
 # Repo root = three levels up: odin_ui/backend/app.py -> repo root.
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -360,6 +363,35 @@ def _label(k, sex):
     return LABELS.get(k, k)
 
 
+def averageness_info(avg, model):
+    """Where a face's shape sits on the population's distinctiveness distribution.
+
+    averageness = Procrustes distance to the mean shape (low = close to the average
+    face = typical; high = distinct). The percentile is EMPIRICAL — ranked against
+    the training faces' averageness quantiles, so "more distinct than X%" is literal.
+    Bands are percentile-based so the label always matches the number. The bell
+    marker `z` is the percentile mapped back through the normal inverse-CDF so it
+    sits at the right spot on the (symmetric) curve."""
+    q = model.get("averageness_quantiles")
+    if avg is None or not q:
+        return None
+    # q holds the 0th..100th percentile values (101 numbers); interpolate the rank.
+    pct = float(np.interp(float(avg), q, np.arange(len(q))))
+    pct = max(0.0, min(100.0, pct))
+    if pct < 30:
+        cat = "Very typical"
+    elif pct < 60:
+        cat = "Typical"
+    elif pct < 85:
+        cat = "Distinct"
+    elif pct < 96:
+        cat = "Unique"
+    else:
+        cat = "Very unique"
+    z = NormalDist().inv_cdf(min(0.999, max(0.001, pct / 100)))
+    return {"z": round(z, 2), "category": cat, "percentile": round(pct)}
+
+
 def _num(v):
     """JSON-safe number: floats only, NaN/inf -> None."""
     if v is None:
@@ -480,6 +512,7 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
         "ratios": _items(feats, GEOM_KEYS, sex),
         "appearance": _items(feats, APPEARANCE_KEYS, sex),
         "contribs": contrib_items,
+        "averageness": averageness_info(feats.get("averageness"), model),
         "base": round(float(base), 3),
         "colors": [
             {"label": "Lips", "hex": _hex(feats, "lips")},

@@ -1,8 +1,41 @@
 import { useEffect, useRef, useState } from 'react'
 import { analyze } from './api'
-import type { AnalyzeResult } from './types'
+import type { AnalyzeResult, Averageness } from './types'
 
 type Sex = 'male' | 'female'
+
+// Bell curve of shape typicality (averageness z-score) with a marker at the face.
+function BellCurve({ a }: { a: Averageness }) {
+  const W = 240, H = 66, pad = 8, base = H - 10, peak = base - 8
+  const zToX = (z: number) => pad + ((z + 3.2) / 6.4) * (W - 2 * pad)
+  const yAt = (z: number) => base - Math.exp(-(z * z) / 2) * peak
+  const pts: string[] = []
+  for (let z = -3.2; z <= 3.201; z += 0.2) pts.push(`${zToX(z).toFixed(1)},${yAt(z).toFixed(1)}`)
+  const zc = Math.max(-3.2, Math.min(3.2, a.z))
+  const mx = zToX(zc)
+  return (
+    <div className="bell-card">
+      <div className="bell-head">
+        <span className="bell-title">Shape typicality</span>
+        <span className="bell-cat">{a.category}</span>
+      </div>
+      <svg className="bell-svg" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+        {[-2, -1, 1, 2].map((z) => (
+          <line key={z} x1={zToX(z)} y1={12} x2={zToX(z)} y2={base}
+                stroke="var(--border)" strokeWidth="1" strokeDasharray="2 3" />
+        ))}
+        <line x1={pad} y1={base} x2={W - pad} y2={base} stroke="var(--border)" strokeWidth="1" />
+        <path d={'M' + pts.join(' L')} fill="none" stroke="var(--muted)" strokeWidth="1.5" />
+        <line x1={mx} y1={yAt(zc)} x2={mx} y2={base} stroke="var(--accent)" strokeWidth="2" />
+        <circle cx={mx} cy={yAt(zc)} r="3.5" fill="var(--accent)" />
+      </svg>
+      <div className="bell-foot">more distinct than {a.percentile}% of faces</div>
+      <div className="bell-note">
+        How usual vs. distinctive your shape is — not an attractiveness rating.
+      </div>
+    </div>
+  )
+}
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null)
@@ -67,30 +100,19 @@ export default function App() {
       // Hovering a geometric ratio -> draw the ACTUAL lines that were measured
       // (dark underlay for contrast, then the bright line, then endpoint dots).
       if (item && item.lines.length) {
-        const lw = Math.max(2, Math.round(canvas.width / 320))
-        const dotR = Math.max(3, Math.round(canvas.width / 170))
+        const lw = Math.max(1, Math.round(canvas.width / 550))
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
+        // Thin red line, with a faint dark underlay so it reads on light skin.
         for (const pass of [
-          { w: lw * 2.4, s: 'rgba(0, 0, 0, 0.5)' },
-          { w: lw, s: 'rgba(255, 205, 50, 0.97)' },
+          { w: lw + Math.max(1.5, lw), s: 'rgba(0, 0, 0, 0.4)' },
+          { w: lw, s: 'rgba(229, 57, 53, 0.95)' },
         ]) {
           ctx.lineWidth = pass.w
           ctx.strokeStyle = pass.s
           for (const seg of item.lines) {
             ctx.beginPath()
             seg.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])))
-            ctx.stroke()
-          }
-        }
-        ctx.fillStyle = 'rgba(255, 205, 50, 0.98)'
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
-        ctx.lineWidth = Math.max(1, dotR * 0.4)
-        for (const seg of item.lines) {
-          for (const p of seg) {
-            ctx.beginPath()
-            ctx.arc(p[0], p[1], dotR, 0, Math.PI * 2)
-            ctx.fill()
             ctx.stroke()
           }
         }
@@ -196,6 +218,15 @@ export default function App() {
         <aside className="results">
           {result ? (
             <>
+              <div className="score-card">
+                <div className="score-value">
+                  {result.score}<span className="score-max">/10</span>
+                </div>
+                <div className="score-label">{result.sex} · test score</div>
+              </div>
+
+              {result.averageness && <BellCurve a={result.averageness} />}
+
               {result.colors.some((c) => c.hex) && (
                 <div className="swatches">
                   {result.colors.map((c) => (

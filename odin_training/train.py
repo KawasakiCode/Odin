@@ -162,6 +162,14 @@ def export_model(label, X_ratios, y, raw, n_estimators):
         "xgb_pred_max": float(preds.max()),
         "shape_ref_mean": M,
         "shape_pls": proj,
+        # Population mean/std of averageness (this sex), for the UI's typicality
+        # bell-curve z-score.
+        "averageness_mean": float(X["averageness"].mean()),
+        "averageness_std": float(X["averageness"].std()),
+        # 0th..100th percentile values of averageness, so the UI can rank a new
+        # face empirically ("more distinct than X% of faces").
+        "averageness_quantiles":
+            np.percentile(X["averageness"].values, np.arange(101)).tolist(),
     }
     out = MODEL_DIR / f"model_{slug}.joblib"
     joblib.dump(bundle, out)
