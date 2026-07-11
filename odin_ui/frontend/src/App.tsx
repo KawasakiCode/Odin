@@ -4,6 +4,8 @@ import type { AnalyzeResult, Averageness } from './types'
 
 type Sex = 'male' | 'female'
 
+const fmtScore = (v: number | null) => (v == null ? '—' : v.toFixed(1))
+
 // Bell curve of shape typicality (averageness z-score) with a marker at the face.
 function BellCurve({ a }: { a: Averageness }) {
   const W = 240, H = 66, pad = 8, base = H - 10, peak = base - 8
@@ -222,7 +224,28 @@ export default function App() {
                 <div className="score-value">
                   {result.score}<span className="score-max">/10</span>
                 </div>
-                <div className="score-label">{result.sex} · test score</div>
+                <div className="score-label">{result.sex} · Odin</div>
+                {result.cnn_scores && (
+                  <>
+                    <div className="cnn-row">
+                      <div className="cnn-chip">
+                        <span className="cnn-name">AlexNet</span>
+                        <span className="cnn-val">{fmtScore(result.cnn_scores.alexnet)}</span>
+                      </div>
+                      <div className="cnn-chip">
+                        <span className="cnn-name">ResNet-18</span>
+                        <span className="cnn-val">{fmtScore(result.cnn_scores.resnet18)}</span>
+                      </div>
+                      <div className="cnn-chip">
+                        <span className="cnn-name">ResNeXt-50</span>
+                        <span className="cnn-val">{fmtScore(result.cnn_scores.resnext50)}</span>
+                      </div>
+                    </div>
+                    <div className="cnn-note">
+                      SCUT-FBP5500 benchmark CNNs (~0.81 R²) · rescaled to /10
+                    </div>
+                  </>
+                )}
               </div>
 
               {result.averageness && <BellCurve a={result.averageness} />}

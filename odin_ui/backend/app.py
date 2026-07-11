@@ -36,6 +36,14 @@ from Odin.Face_analysis.trichion import apply_trichion
 from Odin.Face_analysis.Ratios.appearance import appearance_features
 from Odin.main import add_shape_features, build_features, feature_contributions, male_boost, MODEL_PATHS
 
+# Optional: the SCUT-FBP5500 benchmark CNNs (Caffe via cv2.dnn). Missing files /
+# OpenCV issues degrade gracefully to no CNN scores rather than breaking /analyze.
+sys.path.insert(0, str(ROOT / "pretrained_models"))
+try:
+    import cnn_scorer as _cnn
+except Exception:
+    _cnn = None
+
 app = FastAPI(title="Odin API")
 app.add_middleware(
     CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
@@ -469,7 +477,18 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
     X = pd.DataFrame([feats], columns=model["feature_names"])
     raw = float(model["xgboost"].predict(X)[0])
     base, contribs = feature_contributions(model, X)
-    score = male_boost(raw, model) if model.get("label") == "MALE" else raw
+    # No male presentation boost here: show the raw model prediction so Odin is
+    # directly comparable to the SCUT benchmark CNNs below. (male_boost stays in
+    # the pipeline/CLI; it's just not applied in this comparison UI.)
+    score = raw
+
+    # SCUT benchmark CNN scores (rescaled to 1-10), for side-by-side comparison.
+    cnn_scores = None
+    if _cnn is not None:
+        try:
+            cnn_scores = _cnn.score_all(img, px[:, :2])
+        except Exception:
+            cnn_scores = None
 
     idx = 0 if sex == "male" else 1
     channel_keys = {"eye_r", "eye_g", "eye_b", "skin_r", "skin_g", "skin_b",
@@ -505,6 +524,7 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
         "sex": sex,
         "score": round(score, 2),
         "score_raw": round(raw, 2),
+        "cnn_scores": cnn_scores,
         "boosted": model.get("label") == "MALE" and abs(score - raw) > 1e-6,
         "landmarks": [[round(float(x), 1), round(float(y), 1)] for x, y, _ in px],
         "trichion": ([round(float(trichion_pt[0]), 1), round(float(trichion_pt[1]), 1)]

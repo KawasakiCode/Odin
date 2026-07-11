@@ -13,3 +13,8 @@ tests.txt
 /facenet_cnn/venv
 /facenet_cnn/embeddings_scut.npz
 /shape_axes_plots
+# SCUT benchmark CNNs: exclude the third-party weights/arch (huge, not ours),
+# keep cnn_scorer.py (our code) tracked.
+/pretrained_models/*.caffemodel
+/pretrained_models/*.prototxt
+/.vscode

@@ -141,6 +141,18 @@ header h1 {
 .score-label { color: var(--muted); text-transform: capitalize; margin-top: 4px; }
 .score-note { color: var(--muted); font-size: 12px; margin-top: 6px; }
 
+/* SCUT benchmark CNN scores, shown next to Odin's. */
+.cnn-row { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+.cnn-chip {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 12px; min-width: 66px;
+}
+.cnn-name { font-size: 10.5px; color: var(--muted); }
+.cnn-val { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cnn-note { color: var(--muted); font-size: 10.5px; margin-top: 7px; opacity: 0.8; }
+
 /* Shape-typicality bell curve. */
 .bell-card {
   flex-shrink: 0; margin-bottom: 14px; padding-bottom: 12px;
