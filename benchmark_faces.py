@@ -46,11 +46,11 @@ def infer_sex(s):
 
 def infer_cat(s):
     s = s.lower()
-    if "unattractive" in s or "ugly" in s:              # check unattractive first
+    if "unattractive" in s:              # check unattractive first
         return "unattractive"
-    if "attractive" in s or "pretty" in s or "hot" in s:
+    if "attractive" in s:
         return "attractive"
-    if "average" in s or "mid" in s or "avg" in s:
+    if "average" in s or "avg" in s:
         return "average"
     return None
 
