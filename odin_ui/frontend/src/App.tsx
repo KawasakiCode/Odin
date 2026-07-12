@@ -1,10 +1,43 @@
 import { useEffect, useRef, useState } from 'react'
 import { analyze } from './api'
-import type { AnalyzeResult, Averageness } from './types'
+import type { AnalyzeResult, Averageness, RatioAngle } from './types'
 
 type Sex = 'male' | 'female'
 
 const fmtScore = (v: number | null) => (v == null ? '—' : v.toFixed(1))
+
+// Draw an arc between a ratio's measured line and its horizontal reference, plus
+// the degree label — so the user sees the actual angle that was measured.
+function drawAngle(ctx: CanvasRenderingContext2D, a: RatioAngle, canvasW: number) {
+  const [vx, vy] = a.vertex
+  const a1 = Math.atan2(a.p1[1] - vy, a.p1[0] - vx)
+  const a2 = Math.atan2(a.p2[1] - vy, a.p2[0] - vx)
+  let diff = a2 - a1
+  while (diff > Math.PI) diff -= 2 * Math.PI
+  while (diff < -Math.PI) diff += 2 * Math.PI
+  const r = Math.max(12, Math.round(canvasW / 26))
+  ctx.lineWidth = Math.max(1.5, Math.round(canvasW / 450))
+  ctx.strokeStyle = 'rgba(255, 214, 64, 0.98)'
+  ctx.beginPath()
+  ctx.arc(vx, vy, r, a1, a1 + diff, diff < 0)
+  ctx.stroke()
+  if (a.deg != null) {
+    const mid = a1 + diff / 2
+    const off = r + Math.round(canvasW / 55)
+    const lx = vx + Math.cos(mid) * off
+    const ly = vy + Math.sin(mid) * off
+    const fs = Math.max(12, Math.round(canvasW / 42))
+    ctx.font = `600 ${fs}px system-ui, sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const txt = `${a.deg}°`
+    ctx.lineWidth = Math.max(2, fs / 5)
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)'
+    ctx.strokeText(txt, lx, ly)
+    ctx.fillStyle = 'rgba(255, 214, 64, 1)'
+    ctx.fillText(txt, lx, ly)
+  }
+}
 
 // Bell curve of shape typicality (averageness z-score) with a marker at the face.
 function BellCurve({ a }: { a: Averageness }) {
@@ -88,28 +121,67 @@ export default function App() {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const paint = (img: HTMLImageElement) => {
+    const paint = (img: HTMLImageElement, alpha: number) => {
       canvas.width = img.naturalWidth
       canvas.height = img.naturalHeight
       const ctx = canvas.getContext('2d')
       if (!ctx) return
+      ctx.globalAlpha = 1                    // never fade the photo itself
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       ctx.drawImage(img, 0, 0)
       if (!result || !showLandmarks) return
 
       const item = hovered ? result.contribs.find((r) => r.key === hovered) : undefined
+      const active = !!(item && (item.lines.length || item.polygons.length))
 
-      // Hovering a geometric ratio -> draw the ACTUAL lines that were measured
-      // (dark underlay for contrast, then the bright line, then endpoint dots).
+      // Fade the whole overlay (dim + lines/arcs/polygons) in with an ease-out.
+      if (active) ctx.globalAlpha = 1 - (1 - alpha) * (1 - alpha)
+
+      // Dim the photo a little while highlighting so the overlay stands out.
+      if (active) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'
+        ctx.fillRect(0, 0, canvas.width, canvas.height)
+      }
+
+      const RED = 'rgba(255, 66, 66, 0.98)'
+      const DARK = 'rgba(0, 0, 0, 0.5)'
+      const lw = Math.max(1, Math.round(canvas.width / 500))
+
+      // Skin / eye / lips feature -> outline the sampled polygons (no fill).
+      if (item && item.polygons.length) {
+        ctx.lineJoin = 'round'
+        for (const pass of [{ w: lw + Math.max(1.5, lw), s: DARK }, { w: lw, s: RED }]) {
+          ctx.lineWidth = pass.w
+          ctx.strokeStyle = pass.s
+          for (const poly of item.polygons) {
+            ctx.beginPath()
+            poly.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])))
+            ctx.closePath()
+            ctx.stroke()
+          }
+        }
+        return
+      }
+
+      // Geometric ratio -> the measured lines, plus an angle arc where relevant.
       if (item && item.lines.length) {
-        const lw = Math.max(1, Math.round(canvas.width / 550))
         ctx.lineCap = 'round'
         ctx.lineJoin = 'round'
-        // Thin red line, with a faint dark underlay so it reads on light skin.
-        for (const pass of [
-          { w: lw + Math.max(1.5, lw), s: 'rgba(0, 0, 0, 0.4)' },
-          { w: lw, s: 'rgba(229, 57, 53, 0.95)' },
-        ]) {
+        // dashed horizontal reference for angle ratios, under the solid lines
+        if (item.angles.length) {
+          ctx.save()
+          ctx.setLineDash([Math.max(4, lw * 3), Math.max(4, lw * 3)])
+          ctx.lineWidth = Math.max(1, lw)
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)'
+          for (const a of item.angles) {
+            ctx.beginPath()
+            ctx.moveTo(a.vertex[0], a.vertex[1])
+            ctx.lineTo(a.p2[0], a.p2[1])
+            ctx.stroke()
+          }
+          ctx.restore()
+        }
+        for (const pass of [{ w: lw + Math.max(1.5, lw), s: DARK }, { w: lw, s: RED }]) {
           ctx.lineWidth = pass.w
           ctx.strokeStyle = pass.s
           for (const seg of item.lines) {
@@ -118,17 +190,17 @@ export default function App() {
             ctx.stroke()
           }
         }
+        for (const a of item.angles) drawAngle(ctx, a, canvas.width)
         return
       }
 
-      // Default (or a feature with no geometry): faint union of every ratio's
-      // landmarks, with the corrected trichion in place of raw landmark 10.
+      // Default (or a non-geometry feature): faint dots + the forehead point.
       const used = new Set<number>()
       result.contribs.forEach((r) => r.landmarks.forEach((i) => used.add(i)))
       const radius = Math.max(2, Math.round(canvas.width / 220))
       ctx.lineWidth = Math.max(1, radius * 0.5)
       ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)'
-      ctx.fillStyle = 'rgba(0, 230, 150, 0.95)'
+      ctx.fillStyle = 'rgba(60, 255, 180, 0.98)'
       for (const i of used) {
         if (i === 10) continue
         const p = result.landmarks[i]
@@ -138,27 +210,52 @@ export default function App() {
         ctx.fill()
         ctx.stroke()
       }
-      if (result.trichion && used.has(10)) {
-        const [tx, ty] = result.trichion
+      // Forehead: always draw it (detected hairline, else the raw landmark).
+      const fore = result.forehead ?? result.landmarks[10]
+      if (fore && used.has(10)) {
         ctx.beginPath()
-        ctx.arc(tx, ty, radius, 0, Math.PI * 2)
+        ctx.arc(fore[0], fore[1], radius, 0, Math.PI * 2)
         ctx.fill()
         ctx.stroke()
       }
     }
 
+    // Animate the overlay fade-in when hovering a feature with geometry; the
+    // resting view (dots) draws once at full opacity.
+    const isActiveHover = () => {
+      if (!result || !showLandmarks || !hovered) return false
+      const it = result.contribs.find((r) => r.key === hovered)
+      return !!(it && (it.lines.length || it.polygons.length))
+    }
+    let raf = 0
+    const run = (img: HTMLImageElement) => {
+      if (!isActiveHover()) {
+        paint(img, 1)
+        return
+      }
+      let start = 0
+      const step = (t: number) => {
+        if (!start) start = t
+        const a = Math.min(1, (t - start) / 240)
+        paint(img, a)
+        if (a < 1) raf = requestAnimationFrame(step)
+      }
+      raf = requestAnimationFrame(step)
+    }
+
     const cached = imgElRef.current
     if (cached && loadedUrlRef.current === imageUrl) {
-      paint(cached)
+      run(cached)
     } else {
       const img = new Image()
       img.onload = () => {
         imgElRef.current = img
         loadedUrlRef.current = imageUrl
-        paint(img)
+        run(img)
       }
       img.src = imageUrl
     }
+    return () => cancelAnimationFrame(raf)
   }, [imageUrl, result, showLandmarks, hovered])
 
   return (

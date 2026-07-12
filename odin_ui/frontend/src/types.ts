@@ -16,6 +16,13 @@ export interface RatioBar {
   status: 'good' | 'warn' | 'bad'
 }
 
+export interface RatioAngle {
+  vertex: number[]            // [x,y] arc centre
+  p1: number[]               // measured line end
+  p2: number[]               // horizontal reference end
+  deg: number | null
+}
+
 export interface ContribItem {
   key: string
   label: string
@@ -25,6 +32,8 @@ export interface ContribItem {
   landmarks: number[]
   bar: RatioBar | null
   lines: number[][][]          // segments; each is a list of [x,y] points
+  angles: RatioAngle[]         // angle arcs (for degree ratios)
+  polygons: number[][][]       // skin/eye/lips outline polygons
 }
 
 export interface Averageness {
@@ -50,6 +59,7 @@ export interface AnalyzeResult {
   base: number
   landmarks: [number, number][]
   trichion: [number, number] | null
+  forehead: [number, number] | null
   ratios: RatioItem[]
   appearance: RatioItem[]
   contribs: ContribItem[]

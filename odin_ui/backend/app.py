@@ -34,6 +34,7 @@ from Odin.Face_analysis.landmarks import calculate_landmarks_array
 from Odin.Face_analysis.face_data import extract_face_data
 from Odin.Face_analysis.trichion import apply_trichion
 from Odin.Face_analysis.Ratios.appearance import appearance_features
+from Odin.Face_analysis.Ratios.regions import extract_regions
 from Odin.main import add_shape_features, build_features, feature_contributions, male_boost, MODEL_PATHS
 
 # Optional: the SCUT-FBP5500 benchmark CNNs (Caffe via cv2.dnn). Missing files /
@@ -262,8 +263,11 @@ def ratio_lines(key, fd):
         return [[P("left_pupil_center"), P("right_pupil_center")],
                 [P("left_zygomatic"), P("right_zygomatic")]]
     if key == "height_ratio_36":           # eye-to-mouth vs total face height
-        return [[MID("left_pupil_center", "right_pupil_center"), st],
-                [P("top_center_forehead"), P("chin")]]
+        mid = MID("left_pupil_center", "right_pupil_center")
+        off = abs(float(fd["left_zygomatic"][0]) - float(fd["right_zygomatic"][0])) * 0.12
+        ex = round(mid[0] - off, 1)        # shift the eye-to-mouth line aside so the
+        return [[P("top_center_forehead"), P("chin")],   # two near-vertical lines
+                [[ex, mid[1]], [ex, st[1]]]]              # don't overlap (big one centred)
     if key == "canthal_average":           # inner->outer canthus tilt line, per eye
         return [[P("left_eye_inner_corner"), P("left_eye_outer_corner")],
                 [P("right_eye_inner_corner"), P("right_eye_outer_corner")]]
@@ -327,6 +331,71 @@ def ratio_lines(key, fd):
                 [P("right_upper_eyelid_center"), P("right_lower_eyelid_center")],
                 [P("right_eye_inner_corner"), P("right_eye_outer_corner")]]
     return []
+
+
+# Ratios whose measured quantity is an angle vs. horizontal — the UI draws an arc
+# + degree label between the measured line and a horizontal reference.
+ANGLE_RATIOS = {"canthal_average", "jaw_contour_jaw_slope",
+                "jaw_contour_canthus_alare_slope"}
+
+
+def ratio_angles(key, fd, feats):
+    """For angle ratios: per side, {vertex, p1 (measured line end), p2 (horizontal
+    reference end), deg}. deg is the ratio's value (both sides share the average).
+    [] for non-angle ratios."""
+    if key not in ANGLE_RATIOS:
+        return []
+
+    def P(k):
+        v = fd[k]
+        return [round(float(v[0]), 1), round(float(v[1]), 1)]
+
+    deg = feats.get(key)
+    deg = round(float(deg), 1) if deg is not None else None
+
+    def spec(vertex, end):                       # horizontal ref toward end's x
+        return {"vertex": vertex, "p1": end, "p2": [end[0], vertex[1]], "deg": deg}
+
+    if key == "canthal_average":
+        return [spec(P("left_eye_inner_corner"), P("left_eye_outer_corner")),
+                spec(P("right_eye_inner_corner"), P("right_eye_outer_corner"))]
+    if key == "jaw_contour_jaw_slope":
+        return [spec(P("left_jaw_angle1"), P("chin")),
+                spec(P("right_jaw_angle1"), P("chin"))]
+    if key == "jaw_contour_canthus_alare_slope":
+        return [spec(P("left_eye_outer_corner"), P("left_alare_tip")),
+                spec(P("right_eye_outer_corner"), P("right_alare_tip"))]
+    return []
+
+
+# Appearance feature key -> which sampled regions to outline on hover.
+REGION_MAP = {
+    "skin_texture":        ("left_cheek", "right_cheek"),
+    "skin_a_std":          ("left_cheek", "right_cheek"),
+    "skin_b_std":          ("left_cheek", "right_cheek"),
+    "skin_spot_burden":    ("left_cheek", "right_cheek"),
+    "skin_color":          ("left_cheek", "right_cheek"),
+    "eye_color":           ("left_iris", "right_iris"),
+    "lips_color":          ("lips",),
+    "eye_skin_luminance_contrast": ("left_iris", "right_iris", "left_cheek", "right_cheek"),
+    "eye_skin_redness_contrast":   ("left_iris", "right_iris", "left_cheek", "right_cheek"),
+    "lip_skin_luminance_contrast": ("lips", "left_cheek", "right_cheek"),
+    "lip_skin_redness_contrast":   ("lips", "left_cheek", "right_cheek"),
+    "facial_contrast_avg": ("lips", "left_iris", "right_iris", "left_cheek", "right_cheek"),
+}
+
+
+def region_polygons(key, regions):
+    """Outline polygons for a skin/eye/lips appearance feature; [] otherwise."""
+    names = REGION_MAP.get(key)
+    if not names:
+        return []
+    out = []
+    for n in names:
+        poly = regions.get(n)
+        if poly is not None:
+            out.append([[int(x), int(y)] for x, y in poly])
+    return out
 
 
 # Human labels for the Procrustes shape axes, PER SEX (the two PCAs differ, so
@@ -470,6 +539,7 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
     # Detect the real hairline and overwrite the trichion BEFORE the ratios, so
     # the UI's 4 trichion-dependent ratios match the CLI and training exactly.
     trichion_pt, _ = apply_trichion(face_data, img)
+    regions = extract_regions(px)   # sampling polygons for skin/eye/lips hover
     feats = build_features(face_data, appearance_features(img, px))
 
     model = MODELS[sex]
@@ -504,6 +574,8 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
         "landmarks": RATIO_LANDMARKS.get(k, []),
         "bar": _bar(k, feats.get(k), sex),
         "lines": ratio_lines(k, face_data),
+        "angles": ratio_angles(k, face_data, feats),
+        "polygons": region_polygons(k, regions),
     } for k, c in contribs.items() if k not in channel_keys]
 
     # Colour channels are meaningless individually -> sum each colour's 3 SHAP
@@ -513,7 +585,8 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
         total = sum(float(contribs.get(f"{prefix}_{ch}", 0.0)) for ch in "rgb")
         items.append({"key": f"{prefix}_color", "label": label, "value": None,
                       "ideal": None, "contribution": round(total, 3),
-                      "landmarks": [], "bar": None, "lines": []})
+                      "landmarks": [], "bar": None, "lines": [], "angles": [],
+                      "polygons": region_polygons(f"{prefix}_color", regions)})
 
     contrib_items = sorted(items, key=lambda d: abs(d["contribution"]),
                            reverse=True)
@@ -529,6 +602,10 @@ async def analyze(file: UploadFile = File(...), sex: str = Form("male")):
         "landmarks": [[round(float(x), 1), round(float(y), 1)] for x, y, _ in px],
         "trichion": ([round(float(trichion_pt[0]), 1), round(float(trichion_pt[1]), 1)]
                      if trichion_pt is not None else None),
+        # The forehead point actually used by the ratios (detected hairline or the
+        # raw landmark), always present so the UI can draw it even on fallback.
+        "forehead": [round(float(face_data["top_center_forehead"][0]), 1),
+                     round(float(face_data["top_center_forehead"][1]), 1)],
         "ratios": _items(feats, GEOM_KEYS, sex),
         "appearance": _items(feats, APPEARANCE_KEYS, sex),
         "contribs": contrib_items,
