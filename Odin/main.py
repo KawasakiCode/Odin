@@ -1,9 +1,10 @@
 """
 Odin entry point.
 
-Reads the photo at constants.IMAGEPATH, extracts MediaPipe landmarks, computes
-the geometric ratios (calculate_ratios) and the colour/texture appearance
-features (appearance), assembles them into the exact 40-feature vector the
+Reads the photo given on the command line (default: constants.IMAGEPATH),
+extracts MediaPipe landmarks, computes the geometric ratios (calculate_ratios),
+the colour/texture appearance features (appearance) and the Procrustes shape
+features, assembles them into the exact feature vector the
 trained model expects, and prints the XGBoost attractiveness score (1-10). The
 model is trained directly on the 1-10 scale (SCUT labels span ~1.04-9.44, mean
 ~5.5), so the raw prediction is reported as-is — no rescaling. (RandomForest was
@@ -15,6 +16,7 @@ directly (python Odin/main.py / the IDE run button): the sys.path bootstrap
 below puts the project root on the import path so the absolute `Odin.*` imports
 resolve in both cases.
 """
+import argparse
 import sys
 from pathlib import Path
 
@@ -137,8 +139,8 @@ def feature_contributions(model, X):
     base = contribs[-1]
     return base, dict(zip(X.columns, map(float, contribs[:-1])))
 
-def main():
-    landmarks, image_bgr = calculate_landmarks_array(IMAGEPATH)
+def main(image_path=IMAGEPATH, sex=SEX):
+    landmarks, image_bgr = calculate_landmarks_array(image_path)
 
     # Training (data_scut.py) computes EVERY feature on pixel-space landmarks
     # (lm.x*w, lm.y*h, lm.z*w), so we must too — otherwise the angle/ratio
@@ -161,7 +163,7 @@ def main():
 
     features = build_features(face_data, appearance)
 
-    model = joblib.load(MODEL_PATHS[SEX])
+    model = joblib.load(MODEL_PATHS[sex])
 
     add_shape_features(features, pixel_landmarks, model)
     feature_names = model["feature_names"]
@@ -183,5 +185,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Score a face photo with the Odin model.")
+    parser.add_argument("image", nargs="?", default=IMAGEPATH,
+                        help="path to the photo (default: constants.IMAGEPATH)")
+    parser.add_argument("--sex", choices=sorted(MODEL_PATHS), default=SEX,
+                        help="which per-sex model to use (default: constants.SEX)")
+    args = parser.parse_args()
+    main(args.image, args.sex)
 
