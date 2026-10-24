@@ -1,12 +1,16 @@
 # Odin — How Far Can Interpretable Facial Geometry Go?
 
+**[▶ Live demo](https://kawasakicode.github.io/Odin/)** — runs entirely in your browser
+(the photo is never uploaded). No photo handy? Click one of the AI-generated sample faces.
+
 An end-to-end ML study of **how much of a subjective human rating can be explained by
 named, hand-crafted facial features — and exactly where that breaks down.** Odin
 extracts 478 facial landmarks with MediaPipe, turns them into 51 interpretable
 features (classical proportions, colour/texture, Procrustes shape), trains per-sex
 XGBoost regressors on the SCUT-FBP5500 dataset, and benchmarks the result against
-face embeddings and published deep CNNs. It ships with a FastAPI + React UI that
-explains every prediction feature-by-feature.
+face embeddings and published deep CNNs. It ships with a React UI that explains every
+prediction feature-by-feature — as a FastAPI app, and as a static site where the whole
+pipeline is ported to TypeScript and verified against the Python reference.
 
 **Stack:** Python · MediaPipe · OpenCV · scikit-learn · XGBoost · NumPy/SciPy ·
 FastAPI · React + TypeScript (Vite)
@@ -17,6 +21,9 @@ FastAPI · React + TypeScript (Vite)
 > taste, not a standard. One of the project's main findings is precisely that these
 > ratings **don't transfer** to another rater population (see below). Please don't
 > base your self-image on anything here.
+
+[![Odin web demo: landmark overlay, score and per-feature contributions](docs/web_demo.png)](https://kawasakicode.github.io/Odin/)
+*The live demo on an AI-generated sample face: hover any feature to see it measured on the photo.*
 
 ## Key results
 
