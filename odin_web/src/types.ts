@@ -68,4 +68,7 @@ export interface AnalyzeResult {
   // share of this score's total |contribution| from shape/proportion features
   // vs. skin/colour features (sums to 100)
   breakdown: { shape: number; appearance: number }
+  // head pose (deg) and photo-quality warnings; filled in by api.ts
+  pose?: { yaw: number; pitch: number; roll: number } | null
+  warnings?: { level: 'warn' | 'info'; text: string }[]
 }

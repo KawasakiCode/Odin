@@ -150,6 +150,17 @@ header h1 {
 .score-value { font-size: 46px; font-weight: 800; color: var(--accent); line-height: 1; }
 .score-max { font-size: 20px; font-weight: 600; color: var(--muted); margin-left: 2px; }
 .score-label { color: var(--muted); text-transform: capitalize; margin-top: 4px; }
+.photo-warning {
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  border: 1px solid;
+}
+.photo-warning.warn { background: rgba(255, 184, 0, 0.1); border-color: rgba(255, 184, 0, 0.55); color: #ffd36b; }
+.photo-warning.info { background: rgba(139, 147, 163, 0.08); border-color: var(--border); color: var(--muted); }
+
 .score-scope {
   color: var(--muted);
   font-size: 12.5px;

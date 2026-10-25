@@ -8,6 +8,7 @@ import type { RgbaImage } from './core/imageOps'
 import type { OdinModel } from './core/model'
 import { analyzeFace, toPixelSpace } from './core/pipeline'
 import { present } from './core/present'
+import { photoWarnings, poseFromMatrix, type Expression, type Pose } from './core/quality'
 import type { AnalyzeResult } from './types'
 
 const BASE = import.meta.env.BASE_URL
@@ -23,6 +24,9 @@ export function getLandmarker(): Promise<FaceLandmarker> {
       runningMode: 'IMAGE',
       numFaces: 1,
       minFaceDetectionConfidence: 0.5,
+      // head pose + expression for the photo-quality warnings (same landmarks)
+      outputFacialTransformationMatrixes: true,
+      outputFaceBlendshapes: true,
     }))
   return landmarker
 }
@@ -46,20 +50,44 @@ export async function decode(file: Blob): Promise<RgbaImage> {
   return { width: canvas.width, height: canvas.height, data }
 }
 
-/** MediaPipe landmarks (normalised [x, y, z]) for the image, or null if no face. */
-export async function detectLandmarks(img: RgbaImage): Promise<number[][] | null> {
+export interface Detection {
+  landmarks: number[][]          // normalised [x, y, z]
+  pose: Pose | null
+  expression: Expression | null
+}
+
+/** MediaPipe landmarks, head pose and expression for the image, or null if no face. */
+export async function detectFace(img: RgbaImage): Promise<Detection | null> {
   const lm = await getLandmarker()
   const res = lm.detect(new ImageData(new Uint8ClampedArray(img.data), img.width, img.height))
   const face = res.faceLandmarks[0]
-  return face ? face.map((p) => [p.x, p.y, p.z]) : null
+  if (!face) return null
+  const matrix = res.facialTransformationMatrixes?.[0]
+  const shapes = res.faceBlendshapes?.[0]?.categories
+  const score = (name: string) => shapes?.find((c) => c.categoryName === name)?.score ?? 0
+  return {
+    landmarks: face.map((p) => [p.x, p.y, p.z]),
+    pose: matrix ? poseFromMatrix(matrix.data) : null,
+    expression: shapes
+      ? { smile: (score('mouthSmileLeft') + score('mouthSmileRight')) / 2, jawOpen: score('jawOpen') }
+      : null,
+  }
+}
+
+export async function detectLandmarks(img: RgbaImage): Promise<number[][] | null> {
+  return (await detectFace(img))?.landmarks ?? null
 }
 
 export async function analyze(file: File, sex: string): Promise<AnalyzeResult> {
   const [img, model] = await Promise.all([decode(file), getModel(sex)])
-  const landmarks = await detectLandmarks(img)
-  if (!landmarks) throw new Error('No face detected in this photo.')
+  const det = await detectFace(img)
+  if (!det) throw new Error('No face detected in this photo.')
   // Let the "Analyzing…" state paint before the synchronous number-crunching.
   await new Promise((r) => setTimeout(r, 0))
-  const a = analyzeFace(img, toPixelSpace(landmarks, img.width, img.height), model)
-  return present(a, model, sex as 'male' | 'female', img.width, img.height)
+  const a = analyzeFace(img, toPixelSpace(det.landmarks, img.width, img.height), model)
+  return {
+    ...present(a, model, sex as 'male' | 'female', img.width, img.height),
+    pose: det.pose,
+    warnings: photoWarnings(det.pose, det.expression),
+  }
 }

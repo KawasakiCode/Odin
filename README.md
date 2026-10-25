@@ -106,6 +106,21 @@ Engineering details that mattered:
   deformation (e.g. *jaw angularity × face width-to-height*, the single top male
   feature).
 
+## Web version
+
+The [live demo](https://kawasakicode.github.io/Odin/) runs the entire pipeline in the
+browser, so it's a static site and the photo never leaves the device. MediaPipe runs as
+WASM, and the feature code, Procrustes/PLS shape model, XGBoost inference and TreeSHAP
+contributions are ported to TypeScript ([`odin_web/`](odin_web/)). A port is only useful
+if it reproduces the numbers the model was trained on, so it is tested stage by stage
+against the Python reference: on 36 held-out faces every feature, score and contribution
+matches to within 1e-6, and browser MediaPipe lands within ~0.001 px of Python's
+landmarks. Getting there meant reimplementing OpenCV's 8-bit Lab/grayscale conversions
+bit-exactly and its polygon rasterisation pixel-exactly. The site also checks head pose
+and expression against the range of the training photos and warns when a photo falls
+outside it (e.g. a head turned 16°), since the ratios assume a frontal, neutral face.
+Details: [odin_web/README.md](odin_web/README.md).
+
 ## Findings in detail
 
 **1. Model choice matters in a teachable way.** RandomForest, as a leaf-averaging
@@ -229,6 +244,10 @@ odin_training/                 # training side (datasets NOT included — see be
 odin_ui/                       # web UI
 ├── backend/app.py             #   FastAPI wrapper around the exact Odin pipeline
 └── frontend/                  #   Vite + React + TypeScript
+odin_web/                      # static in-browser build (GitHub Pages)
+├── src/core/                  #   TypeScript port of the pipeline + XGBoost/TreeSHAP
+├── export_model.py            #   joblib bundles → JSON for the browser
+└── parity/                    #   stage-by-stage parity tests against Python
 facenet_cnn/                   # FaceNet-512 embedding + Ridge ceiling experiment
 pretrained_models/cnn_scorer.py  # runs the SCUT benchmark CNNs via OpenCV DNN
 benchmark_faces.py             # out-of-distribution comparison vs. the CNNs

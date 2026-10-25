@@ -354,6 +354,9 @@ export default function App() {
         <aside className="results">
           {result ? (
             <>
+              {result.warnings?.map((w) => (
+                <div key={w.text} className={`photo-warning ${w.level}`} role="status">{w.text}</div>
+              ))}
               <div className="score-card">
                 <div className="score-value">
                   {result.score}<span className="score-max">/10</span>

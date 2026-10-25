@@ -9,6 +9,12 @@ sample faces in `public/samples/`: AI-generated (StyleGAN), so no real person is
 rated, and screened to be frontal with a neutral expression like SCUT's photos.
 Their sources are listed in `src/samples.ts`.
 
+Because the ratios and shape features assume a frontal, neutral photo like SCUT's,
+the site also reads MediaPipe's head pose and blendshapes and warns when a photo is
+outside the training range: head turned > 10°, tilted sideways > 8°, tilted up/down
+outside −10…22°, or mouth open (thresholds and the SCUT distribution they come from
+are in `src/core/quality.ts`; a smile only gets a soft note, since SCUT has plenty).
+
 ## Parity with the Python pipeline
 
 The port has to produce the same numbers as the model was trained on, so it is
@@ -34,6 +40,7 @@ src/core/              DOM-free port of the pipeline (runs in browser and Node)
   faceData.ts ratios.ts trichion.ts appearance.ts shape.ts
   model.ts             XGBoost inference + TreeSHAP
   pipeline.ts          landmarks + image → features → score/contributions
+  quality.ts           head pose / expression checks behind the photo warnings
   present.ts           port of odin_ui/backend/app.py's response building
 src/api.ts             browser glue: decode, MediaPipe, analyze()
 src/App.tsx …          the odin_ui React frontend, unchanged apart from api.ts
