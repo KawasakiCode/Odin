@@ -20,8 +20,10 @@ jobs:
           cache: pip
           cache-dependency-path: requirements*.txt
 
-      - name: System library for OpenCV
-        run: sudo apt-get update && sudo apt-get install -y libgl1
+      # OpenCV needs libGL; MediaPipe's Linux wheel loads OpenGL ES + EGL even
+      # when running on the CPU
+      - name: System libraries for OpenCV and MediaPipe
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libgles2 libegl1
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
