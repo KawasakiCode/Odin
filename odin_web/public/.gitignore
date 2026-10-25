@@ -1,0 +1,2 @@
+# Deployed site: nothing is ignored. Replaces the repo .gitignore that gh-pages
+# would otherwise inherit (it ignores models/face_landmarker.task).

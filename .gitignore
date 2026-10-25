@@ -18,5 +18,3 @@ tests.txt
 /pretrained_models/*.caffemodel
 /pretrained_models/*.prototxt
 /.vscode
-# Static in-browser build (GitHub Pages), kept local for now
-/odin_web

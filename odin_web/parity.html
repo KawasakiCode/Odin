@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Odin — browser parity</title>
+    <style>
+      body { font: 13px/1.4 ui-monospace, monospace; background: #0f1115; color: #e6e9ef; padding: 16px; }
+      td, th { padding: 2px 10px; text-align: right; }
+      th:first-child, td:first-child { text-align: left; }
+    </style>
+  </head>
+  <body>
+    <h3>Browser MediaPipe vs. Python MediaPipe (dev only)</h3>
+    <div id="status">running…</div>
+    <table id="table"></table>
+    <pre id="summary"></pre>
+    <script type="module" src="/src/parityPage.ts"></script>
+  </body>
+</html>

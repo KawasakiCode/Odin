@@ -1,0 +1,9 @@
+node_modules/
+dist/
+# copied from node_modules by scripts/copy-wasm.mjs
+public/wasm/
+# third-party MediaPipe model, copied by export_model.py (not redistributed in git)
+public/models/face_landmarker.task
+# SCUT-FBP5500 pixels + landmarks: dataset terms forbid redistribution. NEVER commit.
+parity/fixtures/
+*.png

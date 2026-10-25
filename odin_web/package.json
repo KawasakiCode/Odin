@@ -1,0 +1,31 @@
+{
+  "name": "odin-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/copy-wasm.mjs",
+    "dev": "npm run assets && vite",
+    "build": "npm run assets && tsc && vite build",
+    "preview": "vite preview",
+    "parity": "tsx parity/parity.ts",
+    "deploy": "npm run build && gh-pages -d dist --dotfiles",
+    "parity:browser": "npm run assets && node scripts/browser-parity.mjs"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.35",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "gh-pages": "^6.2.0",
+    "puppeteer-core": "^23.11.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.3",
+    "vite": "^5.4.0"
+  }
+}
