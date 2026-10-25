@@ -5,18 +5,20 @@
  * (ratios, hairline, regions, colour/texture, shape, XGBoost, TreeSHAP) from
  * any browser-vs-Python landmark drift (that part is checked in parity.html).
  *
- *   npm run parity
+ *   npm run parity                       (local SCUT set, parity/fixtures)
+ *   npm run parity -- parity/fixtures_ci  (committed sample-face set, used in CI)
  */
 import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PNG } from 'pngjs'
 import { extractRegions } from '../src/core/appearance'
 import { fillPolyMask, maskPixels } from '../src/core/imageOps'
 import { contributions, predict, type OdinModel } from '../src/core/model'
 import { analyzeFace, toPixelSpace } from '../src/core/pipeline'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const FIX = join(HERE, 'fixtures')
+const FIX = process.argv[2] ? resolve(process.argv[2]) : join(HERE, 'fixtures')
 const MODELS = join(HERE, '..', 'public', 'models')
 
 interface Fixture {
@@ -51,11 +53,8 @@ const track = (key: string, id: string, js: number, py: number | null) => {
 let polyMismatch = 0
 for (const f of fixtures) {
   const model = models[f.sex]
-  const img = {
-    width: f.width,
-    height: f.height,
-    data: new Uint8Array(readFileSync(join(FIX, `${f.id}.rgba`))),
-  }
+  const png = PNG.sync.read(readFileSync(join(FIX, `${f.id}.png`)))
+  const img = { width: png.width, height: png.height, data: png.data }
   const px = toPixelSpace(f.landmarks, f.width, f.height)
 
   // 1. regions + masks

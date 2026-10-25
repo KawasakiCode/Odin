@@ -4,7 +4,7 @@
  * Reports landmark drift and how far it moves the final score. Results are
  * also published on window.__parity for scripts/browser-parity.mjs.
  */
-import { detectLandmarks, getModel } from './api'
+import { decode, detectLandmarks, getModel } from './api'
 import { analyzeFace, toPixelSpace } from './core/pipeline'
 
 interface Fixture {
@@ -19,14 +19,16 @@ interface Fixture {
 interface Row { id: string; meanPx: number; maxPx: number; jsScore: number; pyScore: number }
 
 async function run() {
-  const fixtures: Fixture[] = await (await fetch('/parity/fixtures/fixtures.json')).json()
+  // ?set=fixtures_ci for the committed sample-face set (default: local SCUT set)
+  const set = new URLSearchParams(location.search).get('set') ?? 'fixtures'
+  const fixtures: Fixture[] = await (await fetch(`/parity/${set}/fixtures.json`)).json()
   const table = document.getElementById('table')!
   table.innerHTML = '<tr><th>fixture</th><th>mean lm Δ px</th><th>max lm Δ px</th>' +
     '<th>JS score</th><th>Py score</th><th>Δ score</th></tr>'
   const rows: Row[] = []
   for (const f of fixtures) {
-    const buf = await (await fetch(`/parity/fixtures/${f.id}.rgba`)).arrayBuffer()
-    const img = { width: f.width, height: f.height, data: new Uint8ClampedArray(buf) }
+    // PNG without colour chunks: decodes to exactly the pixels OpenCV saw
+    const img = await decode(await (await fetch(`/parity/${set}/${f.id}.png`)).blob())
     const lm = await detectLandmarks(img)
     if (!lm) { table.insertAdjacentHTML('beforeend', `<tr><td>${f.id}</td><td colspan=5>no face</td></tr>`); continue }
     let sum = 0, max = 0

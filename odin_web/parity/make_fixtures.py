@@ -1,16 +1,24 @@
 """
-Build parity fixtures: run the reference Python pipeline on a sample of SCUT
-faces and dump everything the TypeScript port must reproduce.
+Build parity fixtures: run the reference Python pipeline on a set of faces and
+dump everything the TypeScript port must reproduce.
 
-For each face it writes the decoded pixels (raw RGBA, so the JS side sees the
-exact same bytes OpenCV did) and records the MediaPipe landmarks, the detected
-hairline, region mask sizes, every model feature, the raw score and the
-per-feature contributions. A few faces are also resized to larger,
-non-square images to exercise the code paths SCUT's 350x350 squares don't.
+For each face it writes the decoded pixels (lossless PNG, so the JS side sees
+the exact bytes OpenCV decoded) and records the MediaPipe landmarks, the
+detected hairline, region mask sizes, every model feature, the raw score and
+the per-feature contributions.
 
-Run from the repo root with the project venv (needs odin_training/scut/):
-    venv/Scripts/python.exe odin_web/parity/make_fixtures.py [N_PER_GROUP]
+Two sets:
+  --set scut     a random sample of SCUT faces + 4 resized to non-square 760x620.
+                 Local only: SCUT pixels must never be committed (parity/fixtures/).
+  --set samples  the public-domain AI sample faces in public/samples/ plus resized,
+                 rotated and mirrored variants. Safe to commit (parity/fixtures_ci/);
+                 this is what CI runs.
+
+Run from the repo root with the project venv:
+    venv/Scripts/python.exe odin_web/parity/make_fixtures.py --set samples
+    venv/Scripts/python.exe odin_web/parity/make_fixtures.py --set scut [--n 8]
 """
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -32,7 +40,9 @@ from Odin.Face_analysis.Ratios.regions import extract_regions  # noqa: E402
 from Odin.main import add_shape_features, build_features, MODEL_PATHS  # noqa: E402
 
 SCUT = ROOT / "odin_training" / "scut" / "Images"
-OUT = Path(__file__).resolve().parent / "fixtures"
+WEB = Path(__file__).resolve().parents[1]
+# public-domain sample faces and their sexes (mirrors src/samples.ts)
+SAMPLES = {"man-1": "male", "man-2": "male", "woman-1": "female", "woman-2": "female"}
 MODELS = {sex: joblib.load(p) for sex, p in MODEL_PATHS.items()}
 
 
@@ -43,7 +53,7 @@ def clean(v):
     return None if np.isnan(v) else v
 
 
-def run(path, fid, sex):
+def run(path, fid, sex, out):
     landmarks, img = calculate_landmarks_array(str(path))
     h, w = img.shape[:2]
     px = landmarks.copy()
@@ -69,8 +79,7 @@ def run(path, fid, sex):
         "cheeks": [regions["left_cheek"], regions["right_cheek"]],
         "left_cheek": [regions["left_cheek"]],
     }
-    rgba = cv2.cvtColor(img, cv2.COLOR_BGR2RGBA)
-    (OUT / f"{fid}.rgba").write_bytes(rgba.tobytes())
+    cv2.imwrite(str(out / f"{fid}.png"), img)          # lossless: same pixels in JS
 
     return {
         "id": fid,
@@ -91,35 +100,58 @@ def run(path, fid, sex):
     }
 
 
-def main():
-    n = int(sys.argv[1]) if len(sys.argv) > 1 else 8
-    OUT.mkdir(parents=True, exist_ok=True)
+def scut_set(n, out):
     rng = np.random.default_rng(0)
     picks = []
     for group in ("AF", "AM", "CF", "CM"):
         files = sorted(SCUT.glob(f"{group}*.jpg"))
         picks += [files[i] for i in rng.choice(len(files), n, replace=False)]
+    jobs = [(cv2.imread(str(p)), p.stem, "female" if p.name[1] == "F" else "male") for p in picks]
+    # larger, non-square variants (upscaled + aspect change) of a few faces
+    jobs += [(cv2.resize(img, (760, 620), interpolation=cv2.INTER_CUBIC), f"{fid}_760x620", sex)
+             for img, fid, sex in jobs[::n][:4]]
+    return jobs
+
+
+def samples_set(out):
+    jobs = []
+    for name, sex in SAMPLES.items():
+        img = cv2.imread(str(WEB / "public" / "samples" / f"{name}.jpg"))
+        h, w = img.shape[:2]
+        jobs.append((img, name, sex))
+        jobs.append((cv2.flip(img, 1), f"{name}_mirrored", sex))
+        if name == "woman-1":       # non-square, larger: kernel sizes, aspect
+            jobs.append((cv2.resize(img, (900, 700), interpolation=cv2.INTER_CUBIC), f"{name}_900x700", sex))
+        if name == "man-1":         # in-plane rotation: hairline walk, hull, roll
+            M = cv2.getRotationMatrix2D((w / 2, h / 2), 12, 1.0)
+            jobs.append((cv2.warpAffine(img, M, (w, h), borderValue=(40, 40, 40)), f"{name}_rot12", sex))
+        if name == "woman-2":       # face cut off by the frame: off-image regions, clipping
+            jobs.append((img[:, int(w * 0.33):].copy(), f"{name}_cropped", sex))
+        if name == "man-2":         # small image: kernel larger than features, borders
+            jobs.append((cv2.resize(img, (300, 300), interpolation=cv2.INTER_AREA), f"{name}_300", sex))
+    return jobs
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--set", choices=("scut", "samples"), default="samples")
+    ap.add_argument("--n", type=int, default=8, help="SCUT faces per race/sex group")
+    args = ap.parse_args()
+    out = Path(__file__).resolve().parent / ("fixtures" if args.set == "scut" else "fixtures_ci")
+    out.mkdir(parents=True, exist_ok=True)
+    jobs = scut_set(args.n, out) if args.set == "scut" else samples_set(out)
 
     fixtures = []
-    for p in picks:
-        sex = "female" if p.name[1] == "F" else "male"
+    tmp = out / "_input.png"
+    for img, fid, sex in jobs:
+        cv2.imwrite(str(tmp), img)                  # the pipeline reads from a path
         try:
-            fixtures.append(run(p, p.stem, sex))
-        except ValueError as e:                 # no face found
-            print("skip", p.name, e)
-
-    # Larger, non-square variants (upscaled + aspect change) of a few faces.
-    tmp = OUT / "_resized.png"
-    for p in picks[::n][:4]:
-        img = cv2.imread(str(p))
-        big = cv2.resize(img, (760, 620), interpolation=cv2.INTER_CUBIC)
-        cv2.imwrite(str(tmp), big)
-        sex = "female" if p.name[1] == "F" else "male"
-        fixtures.append(run(tmp, f"{p.stem}_760x620", sex))
+            fixtures.append(run(tmp, fid, sex, out))
+        except ValueError as e:                     # no face found
+            print("skip", fid, e)
     tmp.unlink()
-
-    (OUT / "fixtures.json").write_text(json.dumps(fixtures))
-    print(f"wrote {len(fixtures)} fixtures to {OUT}")
+    (out / "fixtures.json").write_text(json.dumps(fixtures))
+    print(f"wrote {len(fixtures)} fixtures to {out}")
 
 
 if __name__ == "__main__":

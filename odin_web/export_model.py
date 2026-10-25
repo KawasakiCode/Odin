@@ -13,8 +13,9 @@ browser can't load, so this flattens everything inference needs into arrays:
 Also copies the MediaPipe face_landmarker.task next to them.
 
 Run from the repo root with the project venv:
-    venv/Scripts/python.exe odin_web/export_model.py
+    venv/Scripts/python.exe odin_web/export_model.py [--out DIR]
 """
+import argparse
 import json
 import shutil
 import sys
@@ -63,8 +64,11 @@ def export_shape(bundle):
     }
 
 
-def main():
-    OUT.mkdir(parents=True, exist_ok=True)
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", type=Path, default=OUT, help="output directory (default: public/models)")
+    out_dir = ap.parse_args(argv).out
+    out_dir.mkdir(parents=True, exist_ok=True)
     for sex in ("male", "female"):
         bundle = joblib.load(ROOT / "models" / f"model_{sex}.joblib")
         xgb_model = bundle["xgboost"]
@@ -82,15 +86,15 @@ def main():
             "averagenessQuantiles": [float(v) for v in bundle["averageness_quantiles"]],
             "shape": export_shape(bundle),
         }
-        path = OUT / f"model_{sex}.json"
+        path = out_dir / f"model_{sex}.json"
         path.write_text(json.dumps(out, separators=(",", ":")))
-        print(f"{path.relative_to(ROOT)}: {len(trees)} trees, "
+        print(f"{path}: {len(trees)} trees, "
               f"{path.stat().st_size / 1e6:.1f} MB")
 
     task = ROOT / "models" / "face_landmarker.task"
     if not task.exists():
         sys.exit(f"missing {task} — download it first (see the main README)")
-    shutil.copy(task, OUT / "face_landmarker.task")
+    shutil.copy(task, out_dir / "face_landmarker.task")
     print(f"copied {task.name}")
 
 

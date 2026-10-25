@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  LANDMARKER_URL: https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+
+jobs:
+  python:
+    name: Python pipeline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: System library for OpenCV
+        run: sudo apt-get update && sudo apt-get install -y libgl1
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Download MediaPipe face landmarker
+        run: curl -sSfL -o models/face_landmarker.task "$LANDMARKER_URL"
+
+      # regression on the reference faces, feature/shape invariances,
+      # male boost, and web models in sync with the .joblib bundles
+      - name: Tests
+        run: pytest
+
+  web:
+    name: Browser build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: odin_web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: odin_web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download MediaPipe face landmarker
+        run: curl -sSfL -o public/models/face_landmarker.task "$LANDMARKER_URL"
+
+      - name: Type-check and build
+        run: npm run build
+
+      # OpenCV reference ops, TreeSHAP vs brute-force Shapley, invariances, pose
+      - name: Unit tests
+        run: npm test
+
+      - name: Parity with the Python pipeline
+        run: npm run parity -- parity/fixtures_ci
+
+      - name: Browser MediaPipe vs. Python (headless Chrome)
+        run: npm run parity:browser -- fixtures_ci
+        env:
+          CHROME: /usr/bin/google-chrome
+
+      - name: End-to-end smoke test of the built site
+        run: node scripts/smoke.mjs --sample 1 smoke.png
+        env:
+          CHROME: /usr/bin/google-chrome

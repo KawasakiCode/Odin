@@ -102,9 +102,59 @@ export function toGray(img: RgbaImage): Uint8Array {
 const XY_SHIFT = 16
 const XY_ONE = 1 << XY_SHIFT
 
-/** cv2.line(..., LINE_8) pixels via OpenCV's LineIterator (left-to-right). */
+const inside = (w: number, h: number, x: number, y: number) => x >= 0 && x < w && y >= 0 && y < h
+
+/**
+ * OpenCV clipLine (Cohen-Sutherland on the integer image rect). Returns the
+ * clipped endpoints and whether any part is inside; like OpenCV, a segment
+ * that ends up fully outside may still come back partly modified.
+ */
+function clipLine(w: number, h: number, p1: number[], p2: number[]): [boolean, number[], number[]] {
+  let [x1, y1] = p1
+  let [x2, y2] = p2
+  const right = w - 1, bottom = h - 1
+  const code = (x: number, y: number) => +(x < 0) + +(x > right) * 2 + +(y < 0) * 4 + +(y > bottom) * 8
+  let c1 = code(x1, y1), c2 = code(x2, y2)
+  if ((c1 & c2) === 0 && (c1 | c2) !== 0) {
+    if (c1 & 12) {
+      const a = c1 < 8 ? 0 : bottom
+      x1 += Math.trunc(((a - y1) * (x2 - x1)) / (y2 - y1))
+      y1 = a
+      c1 = +(x1 < 0) + +(x1 > right) * 2
+    }
+    if (c2 & 12) {
+      const a = c2 < 8 ? 0 : bottom
+      x2 += Math.trunc(((a - y2) * (x2 - x1)) / (y2 - y1))
+      y2 = a
+      c2 = +(x2 < 0) + +(x2 > right) * 2
+    }
+    if ((c1 & c2) === 0 && (c1 | c2) !== 0) {
+      if (c1) {
+        const a = c1 === 1 ? 0 : right
+        y1 += Math.trunc(((a - x1) * (y2 - y1)) / (x2 - x1))
+        x1 = a
+        c1 = 0
+      }
+      if (c2) {
+        const a = c2 === 1 ? 0 : right
+        y2 += Math.trunc(((a - x2) * (y2 - y1)) / (x2 - x1))
+        x2 = a
+        c2 = 0
+      }
+    }
+  }
+  return [(c1 | c2) === 0, [x1, y1], [x2, y2]]
+}
+
+/** cv2.line(..., LINE_8) pixels via OpenCV's LineIterator: clip, then walk left-to-right. */
 function drawLine8(mask: Uint8Array, w: number, h: number,
                    x0: number, y0: number, x1: number, y1: number) {
+  if (!inside(w, h, x0, y0) || !inside(w, h, x1, y1)) {
+    const [ok, a, b] = clipLine(w, h, [x0, y0], [x1, y1])
+    if (!ok) return
+    ;[x0, y0] = a
+    ;[x1, y1] = b
+  }
   if (x1 < x0) { [x0, x1] = [x1, x0]; [y0, y1] = [y1, y0] }
   const dx = x1 - x0
   const ady = Math.abs(y1 - y0)
@@ -115,7 +165,7 @@ function drawLine8(mask: Uint8Array, w: number, h: number,
   let err = major - 2 * minor
   let x = x0, y = y0
   for (let i = 0; i <= major; i++) {
-    if (x >= 0 && x < w && y >= 0 && y < h) mask[y * w + x] = 1
+    mask[y * w + x] = 1
     const take = err < 0
     err += -2 * minor + (take ? 2 * major : 0)
     if (steep) { y += ystep; if (take) x += 1 }
@@ -124,10 +174,12 @@ function drawLine8(mask: Uint8Array, w: number, h: number,
 }
 
 /**
- * cv2.fillPoly(mask, polygons, 255) for non-antialiased integer polygons:
- * every edge is drawn as an 8-connected line, then scanlines are filled
- * between sorted edge crossings (even-odd across all polygons, like OpenCV's
- * single edge collection). Returns a 0/1 mask.
+ * cv2.fillPoly(mask, polygons, 255) for non-antialiased integer polygons, after
+ * OpenCV 4.13's CollectPolyEdges + FillEdgeCollection: every edge is drawn as an
+ * 8-connected line, then scanlines are filled between sorted edge crossings
+ * (even-odd across all polygons). Edges leaving the image take their x from the
+ * clipped segment while keeping their full y-range, which is why off-image
+ * parts of a polygon still fill the border column. Returns a 0/1 mask.
  */
 export function fillPolyMask(w: number, h: number, polygons: Polygon[]): Uint8Array {
   const mask = new Uint8Array(w * h)
@@ -138,16 +190,27 @@ export function fillPolyMask(w: number, h: number, polygons: Polygon[]): Uint8Ar
       const [ax, ay] = poly[(i + n - 1) % n]
       const [bx, by] = poly[i]
       drawLine8(mask, w, h, ax, ay, bx, by)
+      let t0 = [ax, ay], t1 = [bx, by]
+      let c0y = ay, c1y = by
+      if (!inside(w, h, ax, ay) || !inside(w, h, bx, by)) {
+        ;[, t0, t1] = clipLine(w, h, t0, t1)
+        if (t0[1] !== t1[1]) { c0y = t0[1]; c1y = t1[1] }
+      }
       if (ay === by) continue
-      const fx0 = ax * XY_ONE, fx1 = bx * XY_ONE
-      const dx = Math.trunc((fx1 - fx0) / (by - ay))       // C integer division
-      if (ay < by) edges.push({ y0: ay, y1: by, x: fx0, dx })
-      else edges.push({ y0: by, y1: ay, x: fx1, dx })
+      const c0x = t0[0] * XY_ONE, c1x = t1[0] * XY_ONE
+      const dx = Math.trunc((c1x - c0x) / (c1y - c0y))       // C integer division
+      if (ay < by) edges.push({ y0: ay, y1: by, x: c0x + (ay - c0y) * dx, dx })
+      else edges.push({ y0: by, y1: ay, x: c1x + (by - c1y) * dx, dx })
     }
   }
   if (edges.length < 2) return mask
-  let yMin = Infinity, yMax = -Infinity
-  for (const e of edges) { yMin = Math.min(yMin, e.y0); yMax = Math.max(yMax, e.y1) }
+  let yMin = Infinity, yMax = -Infinity, xMin = Infinity, xMax = -Infinity
+  for (const e of edges) {
+    const xEnd = e.x + (e.y1 - e.y0) * e.dx
+    yMin = Math.min(yMin, e.y0); yMax = Math.max(yMax, e.y1)
+    xMin = Math.min(xMin, e.x, xEnd); xMax = Math.max(xMax, e.x, xEnd)
+  }
+  if (yMax < 0 || yMin >= h || xMax < 0 || xMin >= w * XY_ONE) return mask
   yMax = Math.min(yMax, h)
   const xs: number[] = []
   for (let y = Math.max(0, yMin); y < yMax; y++) {

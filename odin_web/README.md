@@ -26,6 +26,18 @@ tested stage by stage against the Python reference:
 | MediaPipe WASM vs. Python | `npm run parity:browser` (headless Chrome) | landmark drift 0.0007 px mean / 0.019 px max; 35/36 scores identical, one off by 0.027 |
 | Real JPEG, end to end | `node scripts/smoke.mjs photo.jpg female` | same score as `python -m Odin.main` |
 
+CI can't use SCUT, so it runs the same checks on `parity/fixtures_ci/`: the
+public-domain sample faces plus mirrored, rotated (12°), resized (300 px,
+900×700) and cropped-by-the-frame variants (`make_fixtures.py --set samples`).
+The cropped one is there because a face running off the photo exercises
+OpenCV's edge clipping in `fillPoly`, which the port initially got wrong by a
+few pixels.
+
+Unit tests (`npm test`, `tests/`) cover what doesn't need Python at runtime:
+the OpenCV operations against `cv2` reference outputs (`make_opencv_cases.py`),
+TreeSHAP against brute-force Shapley values on random trees, the ratio and
+Procrustes invariances, and the head-pose maths.
+
 Getting there meant matching OpenCV exactly where it matters: the 8-bit
 `BGR2LAB` and `BGR2GRAY` integer paths (verified bit-exact on all 2^24 colours),
 `fillPoly`'s rasterisation rule (pixel-exact masks), `GaussianBlur`'s kernel size
@@ -60,8 +72,13 @@ npm install
 npm run dev          # http://localhost:5173
 npm run build        # static site in dist/ (~27 MB, mostly the MediaPipe WASM)
 
-# parity (needs odin_training/scut/)
-../venv/Scripts/python.exe parity/make_fixtures.py
+# tests
+npm test                                   # unit tests
+npm run parity -- parity/fixtures_ci       # vs. Python, committed fixtures
+npm run parity:browser -- fixtures_ci      # browser MediaPipe vs. Python (Chrome)
+
+# parity on SCUT (local only, needs odin_training/scut/)
+../venv/Scripts/python.exe parity/make_fixtures.py --set scut
 npm run parity
 npm run parity:browser
 ```

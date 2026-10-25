@@ -1,5 +1,7 @@
 # Odin — How Far Can Interpretable Facial Geometry Go?
 
+[![CI](https://github.com/KawasakiCode/Odin/actions/workflows/ci.yml/badge.svg)](https://github.com/KawasakiCode/Odin/actions/workflows/ci.yml)
+
 **[▶ Live demo](https://kawasakicode.github.io/Odin/)** — runs entirely in your browser
 (the photo is never uploaded). No photo handy? Click one of the AI-generated sample faces.
 
@@ -247,12 +249,40 @@ odin_ui/                       # web UI
 odin_web/                      # static in-browser build (GitHub Pages)
 ├── src/core/                  #   TypeScript port of the pipeline + XGBoost/TreeSHAP
 ├── export_model.py            #   joblib bundles → JSON for the browser
-└── parity/                    #   stage-by-stage parity tests against Python
+├── parity/                    #   stage-by-stage parity tests against Python
+└── tests/                     #   TypeScript unit tests
+tests/                         # Python tests (pytest)
+.github/workflows/ci.yml       # runs both test suites + browser parity on every push
 facenet_cnn/                   # FaceNet-512 embedding + Ridge ceiling experiment
 pretrained_models/cnn_scorer.py  # runs the SCUT benchmark CNNs via OpenCV DNN
 benchmark_faces.py             # out-of-distribution comparison vs. the CNNs
 plots/generate_plots.py        # all README figures
 models/                        # trained per-sex XGBoost bundles (.joblib)
+```
+
+## Tests
+
+Every push runs both pipelines in [GitHub Actions](.github/workflows/ci.yml) on a
+set of reference faces that can be committed: the public-domain AI sample faces plus
+mirrored, rotated, resized and cropped-by-the-frame variants (the SCUT images can't
+be redistributed).
+
+- **Python** (`pytest`): every feature, score and contribution reproduces the
+  recorded values; end to end, MediaPipe lands within 0.05 px of the recorded
+  landmarks; ratios and shape features are invariant to translation/scale/rotation
+  as designed; the male boost is monotone and capped; and the browser's exported
+  models are in sync with the `.joblib` bundles.
+- **TypeScript** (`npm test` in `odin_web/`): the OpenCV reimplementations against
+  `cv2` reference outputs (colour conversion, polygon fills incl. off-image ones), TreeSHAP
+  against brute-force Shapley values on random trees, the same invariances, and the
+  head-pose maths.
+- **Parity**: the TypeScript pipeline against Python on every reference face (within
+  1e-6), browser MediaPipe against Python MediaPipe in headless Chrome, and a smoke
+  test that clicks a sample face on the built site.
+
+```bash
+pip install -r requirements-dev.txt && pytest
+cd odin_web && npm test && npm run parity -- parity/fixtures_ci
 ```
 
 ## Reproducing the training

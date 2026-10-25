@@ -12,7 +12,11 @@ if (!photo && sampleIdx === null) throw new Error('usage: node scripts/smoke.mjs
 const CHROME = process.env.CHROME ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe'
 
 const server = await preview({ preview: { port: 5198 }, logLevel: 'error' })
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true })
+const browser = await puppeteer.launch({
+  executablePath: CHROME,
+  headless: true,
+  args: process.env.CI ? ['--no-sandbox'] : [],   // GitHub's Linux runners
+})
 try {
   const page = await browser.newPage()
   await page.setViewport({ width: 1280, height: 900 })
@@ -32,6 +36,11 @@ try {
   const score = await page.$eval('.score-value, .error', (el) => el.textContent)
   const label = await page.$eval('.score-label, .error', (el) => el.textContent)
   console.log(`${label}: ${score}  (${Date.now() - t0} ms incl. first model load)`)
+  const isError = await page.$('.error')
+  if (sampleIdx !== null && (isError || !/^\d+(\.\d+)?\/10$/.test(score))) {
+    console.error('FAIL: the sample did not produce a score')
+    process.exitCode = 1
+  }
   await page.screenshot({ path: shot, fullPage: true })
   console.log(`screenshot: ${shot}`)
 } finally {

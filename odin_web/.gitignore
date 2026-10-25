@@ -6,4 +6,5 @@ public/wasm/
 public/models/face_landmarker.task
 # SCUT-FBP5500 pixels + landmarks: dataset terms forbid redistribution. NEVER commit.
 parity/fixtures/
-*.png
+# smoke-test screenshots (scripts/smoke.mjs); fixture PNGs elsewhere are tracked
+/*.png
